@@ -830,8 +830,6 @@ class CbrainTask < ActiveRecord::Base
     true
   end
 
-
-
   ##################################################################
   # Archiving Support Methods
   ##################################################################
@@ -845,7 +843,30 @@ class CbrainTask < ActiveRecord::Base
     return :workdir
   end
 
+  ##################################################################
+  # Progress report
+  ##################################################################
 
+  def progress_info
+    width=15
+    color="blue"
+    if CbrainTask::RUNNING_STATUS.include?(self.status)
+      width=15*(1+CbrainTask::RUNNING_STATUS.index(self.status))
+    end
+    if CbrainTask::COMPLETED_STATUS.include?(self.status)
+      color="green"
+      width=100
+    end
+    if CbrainTask::FAILED_STATUS.include?(self.status)
+      color="red"
+      width=100
+    end
+    if CbrainTask::FAILED_STATUS.include?(self.status)
+      color="red"
+      width=100
+    end
+    return [color,width,"",false]
+  end
 
   ##################################################################
   # Lifecycle hooks
