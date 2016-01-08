@@ -229,11 +229,7 @@ class Scir
   class JobTemplate #:nodoc:
 
     # We only support a subset of DRMAA's job template
-<<<<<<< HEAD
-    attr_accessor :name, :command, :arg, :wd, :stdin, :stdout, :stderr, :join, :queue, :walltime, :goes_to_vm, :task_id
-=======
-    attr_accessor :name, :command, :arg, :wd, :stdin, :stdout, :stderr, :join, :queue, :walltime, :tc_extra_qsub_args
->>>>>>> origin/dev
+    attr_accessor :name, :command, :arg, :wd, :stdin, :stdout, :stderr, :join, :queue, :walltime, :goes_to_vm, :task_id, :tc_extra_qsub_args
 
     def revision_info #:nodoc:
       Class.const_get(self.class.to_s.sub(/::JobTemplate/,"")).revision_info
