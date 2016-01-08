@@ -11,7 +11,7 @@
 #
 # It's strongly recommended to check this file into your version control system.
 
-ActiveRecord::Schema.define(:version => 20150615174035) do
+ActiveRecord::Schema.define(:version => 20150929193957) do
 
   create_table "active_record_logs", :force => true do |t|
     t.integer  "ar_id"
@@ -264,6 +264,7 @@ ActiveRecord::Schema.define(:version => 20150615174035) do
     t.string   "amazon_ec2_secret_access_key"
     t.string   "amazon_ec2_key_pair"
     t.string   "amazon_ec2_instance_type"
+    t.string   "docker_executable_name"
   end
 
   add_index "remote_resources", ["type"], :name => "index_remote_resources_on_type"
@@ -344,6 +345,10 @@ ActiveRecord::Schema.define(:version => 20150615174035) do
     t.integer  "group_id"
     t.integer  "ncpus"
     t.string   "docker_image"
+<<<<<<< HEAD
+=======
+    t.string   "extra_qsub_args"
+>>>>>>> origin/dev
   end
 
   add_index "tool_configs", ["bourreau_id"], :name => "index_tool_configs_on_bourreau_id"

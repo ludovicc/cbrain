@@ -513,8 +513,8 @@ class DataProvider < ActiveRecord::Base
     sync_to_provider(userfile)
   end
 
-  # This method provides a quick way to set the cache's file
-  # content to an exact copy of +localfile+, a locally accessible file.
+  # This method provides a quick way to set the cache's file content
+  # to an exact copy of +localpath+, a locally accessible file or directory.
   # The syncronization method +sync_to_provider+ will automatically
   # be called after the copy is performed.
   def cache_copy_from_local_file(userfile, localpath)
@@ -545,7 +545,7 @@ class DataProvider < ActiveRecord::Base
 
   # This method provides a quick way to copy the cache's file
   # to an exact copy +localfile+, a locally accessible file.
-  # The syncronization method +sync_to_cache+ will automatically
+  # The synchronization method +sync_to_cache+ will automatically
   # be called before the copy is performed.
   #
   # Note that if +localpath+ is a path to an existing filesystem
@@ -869,7 +869,8 @@ class DataProvider < ActiveRecord::Base
       newfile.name             = new_name
       newfile.user_id          = new_user_id
       newfile.group_id         = new_group_id
-      newfile.created_at       = Time.now unless target_exists
+      newfile.size             = userfile.size if     target_exists
+      newfile.created_at       = Time.now      unless target_exists
       newfile.updated_at       = Time.now
       newfile.immutable        = false
       newfile.save
@@ -1000,12 +1001,11 @@ class DataProvider < ActiveRecord::Base
   def self.pretty_type #:nodoc:
     self.to_s
   end
-  
+
   # This is a method that will return category type for this data provider
   # in the case of this class (abstract) it will not be invoked.
   # Returning a nil is the convention that we'll use to HIDE a data provider class from the interface.
   # So we'll return nil if the data provider class is not appriopriate for the users to view.
-  
   def self.pretty_category_name
     nil
   end
@@ -1092,7 +1092,7 @@ class DataProvider < ActiveRecord::Base
 
     # Check that the root seems OK
     cache_root = self.cache_rootdir() # class method, not cached
-    self.this_is_a_proper_cache_dir!(cache_root) # raises exception if bad dir
+    self.this_is_a_proper_cache_dir!(cache_root, :for_remote_resource_id => RemoteResource.current_resource.id) # raises exception if bad dir
 
     # Try to read rev from special file in cache root directory
     rev_file = (cache_root + DP_CACHE_ID_FILE).to_s
@@ -1150,10 +1150,11 @@ class DataProvider < ActiveRecord::Base
   #            Defaults to the current machine's hostname if
   #            checking the local filesystem.
   def self.this_is_a_proper_cache_dir!(cache_root,options = {})
-    cache_root    = cache_root.to_s
-    check_local   = options.has_key?(:local) ? options[:local] : true
-    check_key     = options[:key]
-    cache_host    = options[:host]
+    cache_root             = cache_root.to_s
+    check_local            = options.has_key?(:local) ? options[:local].presence : true
+    for_remote_resource_id = options[:for_remote_resource_id].presence # this is the ID of the remote resource for cache_root
+    check_key              = options[:key].presence
+    cache_host             = options[:host].presence
     cache_host  ||= Socket.gethostname if check_local
 
     cb_error "Invalid blank DP cache directory configured." if cache_root.blank?
@@ -1176,10 +1177,9 @@ class DataProvider < ActiveRecord::Base
         end
       cb_error "DP cache directory matches the root of data provider '#{conflict_dp.name}'" if conflict_dp
 
-      # Check to see if the cache dir match the cache dir of any other known Remote Resource
-      current_rr_id = RemoteResource.current_resource.id
+      # Check to see if the cache dir match the cache dir of any *other* known Remote Resource
       conflict_rr = RemoteResource.all.reject do |rr|
-          rr.id == current_rr_id ||
+          rr.id == for_remote_resource_id ||  # comparison to nil is OK here
           rr.dp_cache_dir.blank? ||
           rr.ssh_control_host.blank?
         end

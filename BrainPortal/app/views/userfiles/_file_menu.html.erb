@@ -66,7 +66,7 @@
                                                   :method  => :post)
       %>
 
-      For collection(s):
+      For collection(s) and archive(s):
       <%= hijacker_submit_button("(Un)archive",   :url     => url_for(:action  => :archive_management ),
                                                   :confirm => "Are you sure you want to archive or unarchive the selected files collection?",
                                                   :class   => "button",
@@ -135,44 +135,8 @@
         <%= hijacker_submit_button("Mark Content As Newer", :url  => url_for(:controller => 'userfiles', :action => 'sync_multiple', :operation => 'all_newer'), :ajax_submit  => false, :method  => :post, :class => "button") %>
     <% end %>
 
-    <% select_label = "Selected Files" + (current_session.persistent_userfile_ids.size != 0 ? " (now: #{current_session.persistent_userfile_ids.size})" : "") %>
-    <%= button_with_dropdown_menu(select_label) do %>
-      <p class="left_align">
-      This panel manages your list of <em>persistently</em> selected files.
-      This list is maintained even when you switch from page to page.<br/>
-      These files plus those selected on the current page will all be used
-      for all operation buttons (move/copy, submit tasks, etc).
-      </p>
-      <p>
-      <% if current_session.persistent_userfile_ids.size == 0 %>
-        Currently, no files are selected persistently.
-      <% else %>
-        <%= html_colorize("#{pluralize(current_session.persistent_userfile_ids.size,"file")} currently selected persistently.") %>
-      <% end %>
-      </p>
-      <p>
-      <% [ 'Select all files on all pages', 'Add To List', 'Remove From List', 'Clear The List'].each do |label| %>
-        <%= hijacker_submit_button(label,
-              :url => url_for(:action  => :manage_persistent, :operation => label),
-              :method => :post,
-              :class => "button",
-              :ajax_submit => false
-            )
-        %>
-      <% end %>
-      </p>
-    <% end %>
-    <%= button_with_dropdown_menu("Filters", :content_id => 'userfiles_filters_dropdown_menu') do %>
+    <%= button_with_dropdown_menu("Filters", :content_id => 'userfiles_filters') do %>
       <%= render :partial => 'userfiles/filters' %>
-      <div id="tag_table_sidebar">
-        <%= render :partial => 'userfiles/tag_table_sidebar' %>
-      </div>
-
-      <h4>Other Filters</h4>
-      <ul class="filter_menu">
-        <li><%= filter_add_link "Has No Parent", :filters => {:has_no_parent  => true} %></li>
-        <li><%= filter_add_link "Has No Children", :filters => {:has_no_child  => true} %></li>
-      </ul>
     <% end %>
     <span id="view_option_button">
       <%= render :partial => "userfiles/view_option_button" %>

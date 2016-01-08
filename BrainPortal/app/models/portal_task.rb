@@ -158,26 +158,10 @@ class PortalTask < CbrainTask
   end
 
 
-
+  
   #######################################################
   # Task Launch API
   #######################################################
-
-  # Special boolean properties of your task, returned as a
-  # hash table. Used by CBRAIN rendering code to control
-  # default elements. Advanced feature. The defaults
-  # for all properties are 'false' so that subclass
-  # only have to explicitely set the special properties
-  # that they want 'true' (since nil is also false).
-  def self.properties
-    {
-       :no_submit_button                   => false, # view will not automatically have a submit button
-       :i_save_my_task_in_after_form       => false, # used by validation code for detected coding errors
-       :i_save_my_tasks_in_final_task_list => false, # used by validation code for detected coding errors
-       :no_presets                         => false, # view will not contain the preset load/save panel
-       :use_parallelizer                   => false  # true or fixnum: turns on parallelization
-    }
-  end
 
   # This method should return a simple hash table
   # with the default launch arguments for your task;
@@ -304,7 +288,46 @@ class PortalTask < CbrainTask
     {}
   end
 
+  ######################################################
+  # Task properties directives
+  ######################################################
 
+  # Create a property directive named +name+ for property method +method+
+  # (property methods are methods expected to return property hashes, such
+  # as +untouchable_params_attributes+ and +unpresetable_params_attributes+).
+  # If +instance_method+ is given, an instance method is created for the
+  # property instead of a class method.
+  #
+  #   class SomeTask < PortalTask
+  #     property_directive.(:task_properties, :properties)
+  #     # ...
+  #     task_properties :a, :b, :c
+  #   end
+  # is equivalent to
+  #   class SomeTask < PortalTask
+  #     def self.properties
+  #       { :a => true, :b => true, :c => true }
+  #     end
+  #   end
+  property_directive = lambda do |name, method, instance_method: false|
+    define_singleton_method(name) do |*args|
+      props = args.pop if args.last.is_a?(Hash)
+      props = props.reverse_merge(args.map { |p| [p, true] }.to_h)
+
+      if instance_method
+        define_method(method) { props }
+      else
+        define_singleton_method(method) { props }
+      end
+    end
+  end
+
+  # Directive versions of +self.properties+, +untouchable_params_attributes+ and
+  # +unpresetable_params_attributes+. See +property_directive+ for more
+  # information on how they are used.
+  property_directive.(:task_properties,     :properties)
+  property_directive.(:untouchable_params,  :untouchable_params_attributes,  instance_method: true)
+  property_directive.(:unpresetable_params, :unpresetable_params_attributes, instance_method: true)
 
   ######################################################
   # Wrappers around official API
@@ -706,14 +729,17 @@ class PortalTask < CbrainTask
 end
 
 # Patch: pre-load all model files for the subclasses
-Dir.chdir(CBRAIN::TasksPlugins_Dir) do
-  Dir.glob("*.rb").each do |model|
-    next if model == "cbrain_task_class_loader.rb"
-    model.sub!(/.rb$/,"")
-    unless CbrainTask.const_defined? model.classify
-#      puts_blue "Loading CbrainTask subclass #{model.classify} from #{model}.rb ..."
-      require_dependency "#{CBRAIN::TasksPlugins_Dir}/#{model}.rb"
+[ CBRAIN::TasksPlugins_Dir, CBRAIN::TaskDescriptorsPlugins_Dir ].each do |dir|
+  Dir.chdir(dir) do
+    Dir.glob("*.rb").each do |model|
+      next if [
+        'cbrain_task_class_loader.rb',
+        'cbrain_task_descriptor_loader.rb'
+      ].include?(model)
+
+      model.sub!(/.rb$/, '')
+      require_dependency "#{dir}/#{model}.rb" unless
+        [ model.classify, model.camelize ].any? { |m| CbrainTask.const_defined?(m) rescue nil }
     end
   end
 end
-
