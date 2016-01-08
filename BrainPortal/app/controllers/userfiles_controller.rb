@@ -30,10 +30,9 @@ class UserfilesController < ApplicationController
   api_available
 
   before_filter :login_required
-  before_filter :auto_add_persistent_userfile_ids, :except => [ :manage_persistent ]
   around_filter :permission_check, :only => [
-      :download, :update_multiple, :delete_files, :create_collection, :change_provider, :quality_control,
-      :manage_persistent
+      :download, :update_multiple, :delete_files,
+      :create_collection, :change_provider, :quality_control
   ]
 
   MAX_DOWNLOAD_MEGABYTES = 400
@@ -41,118 +40,98 @@ class UserfilesController < ApplicationController
   # GET /userfiles
   # GET /userfiles.xml
   def index #:nodoc:
+    @scope = scope_from_session('userfiles')
 
-    #------------------------------
-    # Header scope
-    #------------------------------
+    # Manually handle the 'name_like' input, as it cant be pre-computed
+    # server-side (and going the JS route would be overkill).
+    params[:name_like].strip! if params[:name_like]
+    scope_filter_from_params(@scope, :name_like, {
+      :attribute => 'name',
+      :operator  => 'match'
+    })
 
-    @header_scope = header_scope(@filter_params)
+    # Apply basic and @scope-based scoping
+    scope_default_order(@scope, 'name')
+    @base_scope   = base_scope.includes([:user, :data_provider, :sync_status, :tags, :group])
+    @custom_scope = custom_scope(@base_scope)
+    @view_scope   = @scope.apply(@custom_scope)
 
-    #------------------------------
-    # Filtered scope
-    #------------------------------
-
-    @filtered_scope = filter_scope(@filter_params,@header_scope)
-
-    #------------------------------
-    # Sorted scope
-    #------------------------------
-
-    sorted_scope, joins = sorted_scope(@filter_params,@header_scope,@filtered_scope)
-
-    #------------------------------
-    # Tags
-    #------------------------------
-
-    tags_and_total_counts = @header_scope.select("tags.name as tag_name, tags.id as tag_id, COUNT(tags.name) as tag_count").joins(:tags).group("tags.name")
-    filt_tag_counts       = @filtered_scope.joins(:tags).group("tags.name").count
-    @tag_filters          = tags_and_total_counts.map { |tc| ["#{tc.tag_name} (#{filt_tag_counts[tc.tag_name].to_i}/#{tc.tag_count})", { :parameter  => :filter_tags_array, :value => tc.tag_id, :class => "#{"filter_zero" if filt_tag_counts[tc.tag_name].blank?}" }]  }
-
-    #------------------------------
-    # Pagination preparation
-    #------------------------------
-
-    # For Pagination
-    unless [:html, :js].include?(request.format.to_sym)
-      @per_page = 999_999_999
+    # Are hidden files displayed?
+    unless @scope.custom[:view_hidden]
+      @hidden_total = @view_scope.where(:hidden => true).count
+      @view_scope = @view_scope.where(:hidden => false)
     end
-    @current_offset = offset = (@current_page - 1) * @per_page
 
+    # Generate tag filters
+    tag_counts   = @view_scope.joins(:tags).group('tags.name').count
+    @tag_filters = @base_scope
+      .joins(:tags)
+      .group('tags.name')
+      .raw_rows(['tags.name', 'tags.id', 'COUNT(tags.name)'])
+      .map do |name, id, count|
+        {
+          :value     => id,
+          :label     => name,
+          :indicator => tag_counts[name].to_i,
+          :empty     => tag_counts[name].blank?
+        }
+      end
 
-    #------------------------------
-    # Final paginated array of objects
-    #------------------------------
+    # Generate display totals
+    @userfiles_total = @view_scope.count('distinct userfiles.id')
+    @archived_total  = @view_scope.where(:archived  => true).count
+    @immutable_total = @view_scope.where(:immutable => true).count
+    @userfiles_total_size = @view_scope.sum(:size)
 
-    includes = [ :user, :data_provider, :sync_status, :tags, :group ] # used only when fetching objects for rendering the page
+    # Prepare the Pagination object
+    @scope.pagination ||= Scope::Pagination.from_hash({ :per_page => 25 })
+    @current_offset = (@scope.pagination.page - 1) * @scope.pagination.per_page
+    api_request     = ! [:html, :js].include?(request.format.to_sym)
 
-    # ---- NO tree sort ----
-    @filter_params["tree_sort"] = "on" if @filter_params["tree_sort"].blank?
-    if @filter_params["tree_sort"] == "off" || ![:html, :js].include?(request.format.to_sym)
-      @filtered_scope  = @filtered_scope.scoped( :joins => :user ) if current_user.has_role?(:site_manager)
-      # use 'distinct userfiles.id' on count in order to remove duplicate entry
-      # due to the presence of file with multiple status
-      @userfiles_total      = @filtered_scope.count("distinct userfiles.id")
-      ordered_real          = sorted_scope.includes(includes - joins).offset(offset).limit(@per_page).all
-    # ---- WITH tree sort ----
+    # Special case; only userfile IDs are required (API request)
+    if params[:ids_only] && api_request
+      @userfiles = @view_scope.raw_first_column(:id)
+
+    # Tree sort
+    elsif @scope.custom[:tree_sort]
+      # Sort using just IDs and parent IDs then paginate, giving the final
+      # userfiles list in tuple (see +tree_sort_by_pairs+) form.
+      tuples = tree_sort_by_pairs(@view_scope.raw_rows(['userfiles.id', 'userfiles.parent_id']))
+      tuples = @scope.pagination.apply(tuples) unless api_request
+
+      # Keep just ID and depth/level; there is no need for the parent ID,
+      # children list, original index, etc.
+      tuples.map! { |t| [t[0].to_i, t[4]] }
+
+      # Map the corresponding Userfile objects in @view_scope by ID.
+      mapping = @view_scope
+        .where(:id => tuples.map { |t| t.first })
+        .index_by { |u| u.id }
+
+      # Convert the tuple list to Userfile objects using the mapping, conserving
+      # the tuple list's ordering and pagination information.
+      @userfiles = tuples.map! do |id, level|
+        userfile = mapping[id]
+        next unless userfile
+
+        userfile.level = level
+        userfile
+      end
+
+      # Remove invalid entries (occur when the list changes between the sort
+      # and conversion).
+      @userfiles.compact!
+
+    # General case
     else
-      # We first get a list of 'simple' objects [ id, parent_id ]
-      simple_pairs      = sorted_scope.raw_rows( [ "userfiles.id", "userfiles.parent_id" ] )
-      simple_pairs      = tree_sort_by_pairs(simple_pairs) # private method in this controller
-      # At this point, each simple_pair is [ userfile_id, parent_id, [ child1_id, child2_id... ], orig_idx, level ]
-      @userfiles_total  = simple_pairs.size
-      if params[:find_file_id]
-        find_file_id    = params[:find_file_id].to_i
-        find_file_index = simple_pairs.index { |u| u[0] == find_file_id }
-        if find_file_index
-          @current_page = (find_file_index / @per_page) + 1
-          offset = (@current_page - 1) * @per_page
-        end
-      end
-
-      # Paginate the list of simple objects
-      page_of_userfiles = simple_pairs[offset, @per_page] || []
-
-      # Fetch the real objects and collect them in the same order
-      userfile_ids      = page_of_userfiles.collect { |u| u[0] }
-      real_subset       = @filtered_scope.includes( includes ).where( :id => userfile_ids )
-      real_subset_index = real_subset.index_by { |u| u.id }
-      ordered_real      = []
-
-      page_of_userfiles.each do |simple|
-        full = real_subset_index[simple[0].to_i]
-        next unless full # this can happen when the userfile list change between fetching the simple and real lists
-        full.level = simple[4]
-        ordered_real << full
-      end
-
+      @userfiles = @view_scope
+      @userfiles = @scope.pagination.apply(@userfiles) unless api_request
     end
 
-    @userfiles_total_size = @filtered_scope.sum(:size)
+    # Save the modified scope object
+    scope_to_session(@scope, 'userfiles')
+    current_session.save_preferences
 
-
-
-    #------------------------------
-    # Real page of userfile objects
-    #------------------------------
-
-    # Turn the array ordered_real into the final paginated collection
-    @userfiles = WillPaginate::Collection.create(@current_page, @per_page) do |pager|
-      pager.replace(ordered_real || [])
-      pager.total_entries = @userfiles_total
-      pager
-    end
-
-    # Count the number of hidden files, only if the current view option is not showing them.
-    # This code depends on AREL's 'where_values' method, which is not official ?
-    @hidden_total = nil
-    if @filter_params["view_hidden"] != 'on'
-      @hidden_total  = @filtered_scope.undo_where(:hidden).where(:hidden => true).count
-    end
-
-    @archived_total  = @filtered_scope.where(:archived => true).count
-    @immutable_total = @filtered_scope.where(:immutable => true).count
-
-    current_session.save_preferences_for_user(current_user, :userfiles, :view_hidden, :tree_sort, :view_all, :details, :per_page)
     respond_to do |format|
       format.html
       format.js
@@ -243,7 +222,7 @@ class UserfilesController < ApplicationController
     viewer_name           = params[:viewer]
     viewer_userfile_class = params[:viewer_userfile_class].presence.try(:constantize) || @userfile.class
 
-    # Try to find out viewer aming those registered in the classes
+    # Try to find out viewer among those registered in the classes
     @viewer      = viewer_userfile_class.find_viewer(viewer_name)
     @viewer    ||= (viewer_name.camelcase.constantize rescue nil).try(:find_viewer, viewer_name) rescue nil
 
@@ -258,7 +237,9 @@ class UserfilesController < ApplicationController
     end
 
     # Ok, some viewers are invalid for some specific userfiles, so reject it if it's the case.
-    @viewer      = nil if @viewer && ! @viewer.valid_for?(@userfile)
+    if (params[:content_viewer] != 'off')
+      @viewer      = nil if @viewer && ! @viewer.valid_for?(@userfile)
+    end
 
     begin
       if @viewer
@@ -307,13 +288,11 @@ class UserfilesController < ApplicationController
       @userfile[:children_ids]       = @children_ids
     # Prepare next/previous userfiles for html
     elsif request.format.to_sym == :html
-      @sort_index     = params[:sort_index].to_i || 0
+      @sort_index     = [ 0, params[:sort_index].to_i, 999_999_999 ].sort[1]
 
       # Rebuild the sorted Userfile scope
-      @filter_params  = current_session.params_for(params[:proxy_destination_controller] || params[:controller])
-      header_scope    = header_scope(@filter_params)
-      filtered_scope  = filter_scope(@filter_params, header_scope)
-      sorted_scope, _ = sorted_scope(@filter_params, header_scope, filtered_scope)
+      @scope       = scope_from_session('userfiles')
+      sorted_scope = filtered_scope
 
       # Fetch the neighbors of the shown userfile in the ordered scope's order
       neighbors = sorted_scope.where("userfiles.id != ?", @userfile.id).offset([0, @sort_index - 1].max).limit(2).all
@@ -395,7 +374,7 @@ class UserfilesController < ApplicationController
   #            no files nested within directories will be extracted
   #            (the +collection+ option has no such limitations).
   def create #:nodoc:
-    
+
     flash[:error]     ||= ""
     flash[:notice]    ||= ""
     params[:userfile] ||= {}
@@ -443,13 +422,14 @@ class UserfilesController < ApplicationController
                      :tag_ids          => params[:tags]
                    )
                  )
-      
+
       if !userfile.save
         flash[:error]  += "File '#{basename}' could not be added.\n"
         userfile.errors.each do |field, error|
           flash[:error] += "#{field.to_s.capitalize} #{error}.\n"
         end
         respond_to do |format|
+          format.html { redirect_to redirect_path }
           format.json { render :json  => flash[:error], :status  => :unprocessable_entity}
         end
         return
@@ -673,7 +653,12 @@ class UserfilesController < ApplicationController
     failed_list   = {}
     CBRAIN.spawn_with_active_records_if(do_in_spawn,current_user,"Sending update to files") do
       access_requested = commit_name == :update_tags ? :read : :write
-      filelist         = Userfile.find_all_accessible_by_user(current_user, :access_requested => access_requested ).where(:id => file_ids).all
+      # if the current user is admin or site manager they're allowed to update attributes of any file even if they're not the owner. Otherwise, the current user must be the owner to modify the attributes.
+      if current_user.has_role?(:site_manager) || current_user.has_role?(:admin_user)
+        filelist       = Userfile.find_all_accessible_by_user(current_user, :access_requested => access_requested ).where(:id => file_ids).all
+      else
+        filelist       = Userfile.find_all_accessible_by_user(current_user, :access_requested => access_requested ).where(:id => file_ids, :user_id => current_user.id).all
+      end
       failure_ids      = file_ids - filelist.map {|u| u.id.to_s }
       failed_files     = Userfile.where(:id => failure_ids).select([:id, :name, :type]).all
       failed_list["you don't have write access"] = failed_files if failed_files.present?
@@ -840,6 +825,7 @@ class UserfilesController < ApplicationController
                               :header        => "Collections Merged",
                               :variable_text => "[[#{collection.name}][/userfiles/#{collection.id}]]"
                               )
+          collection.addlog(self, "Created by #{current_user.login} by merging #{userfiles.size} files.")
         elsif result == :collision
           Message.send_message(current_user,
                               :message_type  => :error,
@@ -942,54 +928,6 @@ class UserfilesController < ApplicationController
         format.html { redirect_to :action => :index }
         format.json { render :json => { :success_list => success_list.map(&:id), :failed_list => failed_list.map(&:id) } }
     end
-  end
-
-  # Adds the selected userfile IDs to the session's persistent list
-  def manage_persistent
-
-    if (params[:operation] || 'clear') =~ /(clear|add|remove|replace)/i
-      filelist  = params[:file_ids] || []
-      operation = Regexp.last_match[1].downcase
-    elsif (params[:operation]) =~ /select/i
-      operation      = "add"
-      # Reduce userfiles list according to @filter_params
-      filelist       = []
-      header_scope   = header_scope(@filter_params)
-      filtered_scope = filter_scope(@filter_params, header_scope)
-      filtered_scope.each do |f|
-        filelist << f.id.to_s if f.available?
-      end
-    else
-      operation = 'clear'
-    end
-
-    flash[:notice] = ""
-
-    cleared_count = added_count = removed_count = 0
-
-    if operation == 'clear' || operation == 'replace'
-      cleared_count = current_session.persistent_userfile_ids_clear
-      flash[:notice] += "#{view_pluralize(cleared_count, "file")} cleared from persistent list.\n" if cleared_count > 0
-    end
-
-    if operation == 'add'   || operation == 'replace'
-      added_count   = current_session.persistent_userfile_ids_add(filelist)
-      flash[:notice] += "#{view_pluralize(added_count, "file")} added to persistent list.\n" if added_count > 0
-    end
-
-    if operation == 'remove'
-      removed_count = current_session.persistent_userfile_ids_remove(filelist)
-      flash[:notice] += "#{view_pluralize(removed_count, "file")} removed from persistent list.\n" if removed_count > 0
-    end
-
-    persistent_ids = current_session.persistent_userfile_ids_list
-    flash[:notice] += "Total of #{view_pluralize(persistent_ids.size, "file")} now in the persistent list of files.\n" if
-      persistent_ids.size > 0 && (added_count > 0 || removed_count > 0 || cleared_count > 0)
-
-    flash[:notice] += "No changes made to the persistent list of userfiles." if
-      added_count == 0 && removed_count == 0 && cleared_count == 0
-
-    redirect_to :action => :index, :page => params[:page]
   end
 
   #Delete the selected files.
@@ -1119,7 +1057,7 @@ class UserfilesController < ApplicationController
     tarfile      = create_relocatable_tar_for_userfiles(userfiles_list,current_user.login)
     tarfile_name = "#{specified_filename}.tar.gz"
     send_file tarfile, :stream  => true, :filename => tarfile_name
-    CBRAIN.spawn_fully_independent("DL clean #{current_user.login}") do
+    CBRAIN.spawn_fully_independent("Download Clean Tmp #{current_user.login}") do
       sleep 3000
       File.unlink(tarfile)
     end
@@ -1269,6 +1207,9 @@ class UserfilesController < ApplicationController
   # abcd/*  ->  abcd/CONTENT.tar.gz
   # On the an Database archived FileCollection:
   # "abcd"  ->  "abcd" with 'archived' attribute set to true
+  #
+  # Also handles unarchiving TarArchives, just like create's
+  # :archive => 'collection' option.
   def archive_management
     filelist    = params[:file_ids] || []
 
@@ -1276,8 +1217,8 @@ class UserfilesController < ApplicationController
     userfiles        = []
     skipped_messages = {}
     Userfile.find_accessible_by_user(filelist, current_user, :access_requested => :write).each do |userfile|
-      unless userfile.is_a?(FileCollection)
-        (skipped_messages["Not a FileCollection"] ||= []) << userfile
+      unless userfile.is_a?(FileCollection) || userfile.is_a?(TarArchive)
+        (skipped_messages["Not a FileCollection or TarArchive"] ||= []) << userfile
         next
       end
 
@@ -1307,13 +1248,38 @@ class UserfilesController < ApplicationController
       failed_list  = {}
 
       userfiles.each_with_index do |userfile,i|
-        if userfile.archived?
+        if userfile.is_a?(TarArchive)
+          begin
+            $0 = "UnarchiveFile ID=#{userfile.id} #{i+1}/#{userfiles.size}\0"
+
+            basename = userfile.name.dup
+            raise "Only files with extensions .tar, .tar.gz and .tgz are supported." unless
+              basename.sub!(/\.(tar(\.gz)?|tgz)$/, '')
+
+            raise "Collection '#{basename}' already exists." if
+              current_user.userfiles.exists?(
+                :name             => basename,
+                :data_provider_id => userfile.data_provider_id
+              )
+
+            userfile.sync_to_cache
+            collection      = userfile.dup.becomes(FileCollection)
+            collection.name = basename
+            collection.extract_collection_from_archive_file(userfile.cache_full_path.to_s)
+            userfile.destroy
+
+            error_message = ""
+          rescue => ex
+            error_message = ex.message
+          end
+        elsif userfile.archived?
           $0 = "UnarchiveFile ID=#{userfile.id} #{i+1}/#{userfiles.size}\0"
           error_message = userfile.provider_unarchive
         else
           $0 = "ArchiveFile ID=#{userfile.id} #{i+1}/#{userfiles.size}\0"
           error_message = userfile.provider_archive
         end
+
         if error_message.blank?
           success_list << userfile
         else
@@ -1337,19 +1303,11 @@ class UserfilesController < ApplicationController
 
   private
 
-  # Adds the persistent userfile ids to the params[:file_ids] argument
-  def auto_add_persistent_userfile_ids #:nodoc:
-    params[:file_ids] ||= []
-    if params[:ignore_persistent].blank?
-      params[:file_ids] = params[:file_ids] | current_session.persistent_userfile_ids_list
-    end
-  end
-
   # Verify that all files selected for an operation
   # are accessible by the current user.
   def permission_check #:nodoc:
     action_name = params[:action].to_s
-    if params[:file_ids].blank? && action_name != 'manage_persistent'
+    if params[:file_ids].blank?
       flash[:error] = "No files selected? Selection cleared.\n"
       redirect_to :action => :index, :format => request.format.to_sym
       return
@@ -1598,93 +1556,270 @@ class UserfilesController < ApplicationController
     result
   end
 
-  # Reduce Userfile scoped according with the header scope
-  # selected by user
-  def header_scope(filters)
-    header_scope = Userfile.scoped
+  # Base userfiles scope; all userfiles currently visible to the user,
+  # respecting view options, user and project restrictions.
+  # Requires a valid @scope object.
+  def base_scope
+    base = Userfile.scoped
 
     # Restrict by 'view all' or not
-    filters["view_all"] ||= current_user.has_role?(:admin_user) ? 'off' : 'on'
-    if filters["view_all"] == 'on'
-      header_scope = Userfile.restrict_access_on_query(current_user, header_scope, :access_requested => :read)
+    @scope.custom[:view_all] = !current_user.has_role?(:admin_user) if
+      @scope.custom[:view_all].nil?
+
+    if @scope.custom[:view_all]
+      base = Userfile.restrict_access_on_query(current_user, base, :access_requested => :read)
     else
-      header_scope = header_scope.where( :user_id => current_user.id )
+      base = base.where(:user_id => current_user.id)
     end
 
-    # Filter by current project
-    if current_project
-      header_scope = header_scope.where( :group_id  => current_project.id )
-    end
-
-    # Filter by 'view hidden' or not
-    unless filters["view_hidden"] == 'on'
-      header_scope = header_scope.where( :hidden => false ) # show only the non-hidden files
-    end
-
-    header_scope
+    base = base.where(:group_id => current_project.id) if current_project
+    base
   end
 
-  # Reduce Userfile scoped according with the filters
-  # selected by user
-  def filter_scope(filters,header_scope)
-    # Prepare filters
-    filters["filter_hash"]                 ||= {}
-    filters["filter_custom_filters_array"] ||= []
-    filters["filter_custom_filters_array"]  &= current_user.custom_filter_ids.map(&:to_s)
-    filters["filter_tags_array"]           ||= []
-    filters["filter_tags_array"]            &= current_user.available_tags.map{ |t| t.id.to_s }
-
-    # Prepare custom filters
-    custom_filter_tags = filters["filter_custom_filters_array"].map { |filter| UserfileCustomFilter.find(filter).tag_ids }.flatten.uniq
-
-    # Prepare tag filters
-    tag_filters        = filters["filter_tags_array"] + custom_filter_tags
-    #Apply filters
-    filtered_scope     = base_filtered_scope(header_scope)
-
-    filters["filter_custom_filters_array"].each do |custom_filter_id|
-      custom_filter    = UserfileCustomFilter.find(custom_filter_id)
-      filtered_scope   = custom_filter.filter_scope(filtered_scope)
-    end
-
-    unless tag_filters.blank?
-      filtered_scope   = filtered_scope.where( "((SELECT COUNT(DISTINCT tags_userfiles.tag_id) FROM tags_userfiles WHERE tags_userfiles.userfile_id = userfiles.id AND tags_userfiles.tag_id IN (#{tag_filters.join(",")})) = #{tag_filters.size})" )
-    end
-    return filtered_scope
+  # Custom filters scope; filtered list of userfiles respecting currently active
+  # custom filters. +base+ is expected to be the initial scope to apply custom
+  # filters to (defaults to +base_scope+). Requires a valid @scope object.
+  def custom_scope(base = nil)
+    ((@scope.custom[:custom_filters] || []) & current_user.custom_filter_ids)
+      .map { |id| UserfileCustomFilter.find_by_id(id) }
+      .compact
+      .inject(base || base_scope) { |scope, filter| filter.filter_scope(scope) }
   end
 
-  # Sort a scoped Userfile according with the parameters
-  # selected by user
-  # Returns the sorted scoped Userfile and the set of joins
-  # placed on it.
-  # FIXME the sorting joins are required by some callers of
-  # sorted_scope and both solutions (returning the joins and
-  # recomputing them) are awkward
-  def sorted_scope(filters,header_scope,filtered_scope)
-    # Prepare sorting options
-    filters["sort_hash"]["order"] ||= 'userfiles.name'
+  # Combination of +base_scope+, +custom_scope+ and @scope object; returns a
+  # scoped list of userfiles fitlered/ordered by all three.
+  # Requires a valid @scope object.
+  def filtered_scope
+    @scope.apply(custom_scope(base_scope))
+  end
 
-    # Apply the sorting parameters
-    sorted_scope          = base_sorted_scope filtered_scope
-
-    # Identify and add necessary table joins
-    joins                 = []
-    sort_table            = filters["sort_hash"]["order"].split(".")[0]
-    if sort_table == "users" || current_user.has_role?(:site_manager)
-      joins << :user
+  # Userfiles-specific tag Scope filter; filter by a set of tags which must
+  # all be on a given userfile for it to pass the filter. Note that this is
+  # an all-or-nothing filter; to pass, an userfile needs *all* tags.
+  #
+  # Note that this filter uses Scope::Filter's *value* attribute to hold the
+  # tags to check against, and that the *attribute* attribute is statically
+  # set to 'tags' (as this filter will only ever filter tags).
+  class TagFilter < Scope::Filter
+    # Create a new blank TagFilter. Only present to pre-set *attribute*.
+    def initialize #:nodoc:
+      @attribute = 'tags'
     end
-    case sort_table
-    when "groups"
-      joins << :group
-    when "data_providers"
-      joins << :data_provider
+
+    # Nice string representation of this filter for +pretty_scope_filter+.
+    def to_s
+      "Tags: " + Tag.find(@value).map(&:name).uniq.join(', ') rescue ''
     end
-    sorted_scope = sorted_scope.joins(joins) unless joins.empty?
 
-    # Add a secondary sorting column (name)
-    sorted_scope = sorted_scope.order('userfiles.name') unless filters["sort_hash"]["order"] == 'userfiles.name'
+    # The methods below are TagFilter specific versions of the Scope::Filter
+    # interface. See Scope::Filter for more details on how these methods
+    # operate and for detailed parameter information.
 
-    return sorted_scope, joins
+    # Type name to recognize this filter when in hash representation
+    # (+type+ (+t+) key).
+    def self.type_name
+      'uf.tags'
+    end
+
+    # Apply this filter on +collection+, which is expected to be a userfiles
+    # model or scope or a collection of Userfile objects.
+    #
+    # Note that this filter is specific to Userfiles and will not operate
+    # correctly with any other kind of object.
+    def apply(collection)
+      raise "no tags to filter with" unless @value.present?
+      tags = Set.new(@value)
+
+      # With an Userfile model (or scope)
+      if (collection <= ActiveRecord::Base rescue nil)
+        placeholders = tags.map { '?' }.join(',')
+        collection.where(<<-"SQL".strip_heredoc, *tags)
+          ((
+            SELECT COUNT(DISTINCT tags_userfiles.tag_id)
+            FROM tags_userfiles
+            WHERE
+              tags_userfiles.userfile_id = userfiles.id AND
+              tags_userfiles.tag_id IN (#{placeholders})
+          ) = #{tags.size})
+        SQL
+
+      # With a Ruby Enumerable
+      else
+        collection.select { |u| (tags - u.tags.map(&:id)).empty? }
+      end
+    end
+
+    # Check if this filter is valid (+apply+ can be used). A TagFilter only
+    # requires a valid *value* to be useable.
+    def valid?
+      @value.present?
+    end
+
+    # Create a new TagFilter from a hash representation. The following keys
+    # are recognized in +hash+:
+    #
+    # [+value+ or +v+]
+    #  *value* attribute: an Enumerable of tags (tag IDs as integers) for the
+    #  userfiles to have.
+    #
+    # Note that no other key from Scope::Filter's +from_hash+ is recognized.
+    def self.from_hash(hash)
+        return nil unless hash.is_a?(Hash)
+
+        hash = hash.with_indifferent_access unless
+          hash.is_a?(HashWithIndifferentAccess)
+
+        filter = self.new
+        filter.value = Array(hash['value'] || hash['v'])
+          .map { |v| Integer(v) rescue nil }
+          .compact
+
+        filter
+    end
+
+    # Convert this TagFilter into a hash representation, doing the exact
+    # opposite of +from_hash+.
+    def to_hash(compact: false)
+      hash = {
+        'type'  => self.class.type_name,
+        'value' => @value
+      }
+
+      compact ? self.class.compact_hash(hash) : hash
+    end
+
+    # Compact +hash+, a hash representation of TagFilter (matching +from_hash+'s
+    # structure).
+    def self.compact_hash(hash)
+      ViewScopes::Scope.generic_compact_hash(
+        hash,
+        {
+          'type'  => 't',
+          'value' => 'v',
+        },
+        defaults: { 'value' => [] }
+      )
+    end
+  end
+
+  # Crude Userfiles-specific child/parent relationship Scope filter; filter by
+  # whether or not a given userfile has children or a parent.
+  #
+  # Note that this filter uses Scope::Filter's *operator* attribute to hold
+  # which condition to filter on, and that the *attribute* attribute is set
+  # accordingly to avoid duplication. The following conditions (values for
+  # *operator*) are available:
+  # [+no_child+]  Userfiles without any children (shortened to 'c').
+  # [+no_parent+] Userfiles without a parent (shortened to 'p').
+  class HierarchyFilter < Scope::Filter
+    # Nice string representation of this filter for +pretty_scope_filter+.
+    def to_s
+      case @operator.to_s
+      when 'no_child'  then 'Has no children'
+      when 'no_parent' then 'Has no parent'
+      else @operator.to_s.humanize
+      end
+    end
+
+    # The methods below are HierarchyFilter specific versions of the
+    # Scope::Filter interface. See Scope::Filter for more details on how these
+    # methods operate and for detailed parameter information.
+
+    # Type name to recognize this filter when in hash representation
+    # (+type+ (+t+) key).
+    def self.type_name
+      'uf.hier'
+    end
+
+    # Apply this filter on +collection+, which is expected to be a userfiles
+    # model or scope or a collection of Userfile objects.
+    #
+    # Note that this filter is specific to Userfiles and will not operate
+    # correctly with any other kind of object.
+    def apply(collection)
+      raise "nothing to filter with" unless valid?
+
+      # With an Userfile model (or scope)
+      if (collection <= ActiveRecord::Base rescue nil)
+        case @operator.to_s.downcase
+        when 'no_child'
+          collection.where(<<-"SQL".strip_heredoc)
+            (NOT EXISTS(
+              SELECT 1
+              FROM userfiles AS children
+              WHERE children.parent_id = userfiles.id
+            ))
+          SQL
+        when 'no_parent'
+          collection.where(:parent_id => nil)
+        end
+
+      # With a Ruby Enumerable
+      else
+        case @operator.to_s.downcase
+        when 'no_child'
+          collection.select { |u| u.children.exists? }
+        when 'no_parent'
+          collection.reject(&:parent_id)
+        end
+      end
+    end
+
+    # Check if this filter is valid (+apply+ can be used). A HierarchyFilter
+    # only requires a valid *operator*.
+    def valid?
+      ['no_child', 'no_parent'].include?(@operator.to_s)
+    end
+
+    # Create a new HierarchyFilter from a hash representation. The following
+    # keys are recognized in +hash+:
+    #
+    # [+operator+ or +o+]
+    #  *operator* attribute: either no_child/c or no_parent/p
+    #
+    # Note that no other key from Scope::Filter's +from_hash+ is recognized.
+    def self.from_hash(hash)
+      return nil unless hash.is_a?(Hash)
+
+      hash = hash.with_indifferent_access unless
+        hash.is_a?(HashWithIndifferentAccess)
+
+      filter = self.new
+
+      operator = (hash['operator'] || hash['o'] || 'no_child').to_s.downcase
+      filter.operator  = operator if ['no_child', 'no_parent'].include?(operator)
+      filter.attribute = "##{filter.operator}" if filter.operator
+
+      filter
+    end
+
+    # Convert this HierarchyFilter into a hash representation, doing the exact
+    # opposite of +from_hash+.
+    def to_hash(compact: false)
+      hash = {
+        'type'     => self.class.type_name,
+        'operator' => @operator.to_s
+      }
+
+      compact ? self.class.compact_hash(hash) : hash
+    end
+
+    # Compact +hash+, a hash representation of HierarchyFilter (matching
+    # +from_hash+'s structure).
+    def self.compact_hash(hash)
+      ViewScopes::Scope.generic_compact_hash(
+        hash,
+        {
+          'type'     => 't',
+          'operator' => 'o',
+        },
+        defaults: { 'operator' => 'no_child' },
+        values: [
+          [ 'operator', 'no_child'  => 'c' ],
+          [ 'operator', 'no_parent' => 'p' ]
+        ]
+      )
+    end
   end
 
 end

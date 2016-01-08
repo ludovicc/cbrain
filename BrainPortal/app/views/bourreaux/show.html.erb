@@ -189,13 +189,13 @@
           <div class="field_explanation">Warning! Changing this field will result in resetting the synchronization
         status of all files from all Data Providers! Also, the Rails app will have to
         be restarted, and all files in that directory will be erased!</div>
-        <% end %>
-        <% t.edit_cell(:spaced_dp_ignore_patterns, :header => "Patterns for filenames to ignore", :content => @bourreau.spaced_dp_ignore_patterns) do %>
-          <%= text_field_tag "bourreau[spaced_dp_ignore_patterns]", @bourreau.spaced_dp_ignore_patterns, :size => 60 %><br/>
-          <div class="field_explanation">Separate several patterns with spaces; each pattern can contain<br> single '*'s, but no '/'s or special characters.</div>
-        <% end %>
-        <% t.edit_cell(:cache_trust_expire, :header => "Cache Expiration Timeout (in seconds)", :content => (@bourreau.cache_trust_expire == 0 ? "Never" : @bourreau.cache_trust_expire)) do %>
-          <%= select_tag("bourreau[cache_trust_expire]", options_for_select([
+      <% end %>
+      <% t.edit_cell(:spaced_dp_ignore_patterns, :header => "Patterns for filenames to ignore", :content => @bourreau.spaced_dp_ignore_patterns) do %>
+        <%= text_field_tag "bourreau[spaced_dp_ignore_patterns]", @bourreau.spaced_dp_ignore_patterns, :size => 60 %><br/>
+        <div class="field_explanation">Separate several patterns with spaces; each pattern can contain single '*'s, but no '/'s or special characters.</div>
+      <% end %>
+      <% t.edit_cell(:cache_trust_expire, :header => "Cache Expiration Timeout (in seconds)", :content => (@bourreau.cache_trust_expire == 0 ? "Never" : @bourreau.cache_trust_expire)) do %>
+        <%= select_tag("bourreau[cache_trust_expire]", options_for_select([
                 [ "Never",        "0"                  ],
                 [ "Six hours",     6.hours.to_i.to_s   ],
                 [ "Twelve hours", 12.hours.to_i.to_s   ],
@@ -402,6 +402,12 @@
                   [ "Debug info",  2 ]
               ], :selected => @bourreau.workers_verbose)
           %>
+        <% end %>
+      <% end %>
+      <%= show_table(@bourreau, :header => "Docker Configuration", :edit_condition => @bourreau.has_owner_access?(current_user)) do |t| %>
+        <% t.edit_cell :docker_executable_name, :header => "Docker executable" do %>
+          <%= text_field_tag "bourreau[docker_executable_name]", @bourreau.docker_executable_name, :size => 60 %><br/>
+           <div class="field_explanation">Name of the Docker executable available on the machines where tasks will run. Defaults to "docker" if left empty.</div>
         <% end %>
       <% end %>
     <% end %>

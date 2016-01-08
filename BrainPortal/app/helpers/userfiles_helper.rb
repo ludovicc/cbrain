@@ -30,14 +30,7 @@ module UserfilesHelper
   # link to show page, sync status and formats.
   def filename_listing(userfile, link_options={})
     html = []
-    html << tree_view_icon(userfile.level) if @filter_params["tree_sort"] == "on" && userfile.level.to_i > 0
-    if userfile.is_a? FileCollection
-      file_icon = image_tag "/images/folder_icon_solid.png"
-    else
-      file_icon = image_tag "/images/file_icon.png"
-    end
-    html << ajax_link(file_icon, {:action => :index, :clear_filter => true, :find_file_id => userfile.id}, :datatype => "script", :title => "Show in Unfiltered File List")
-    html << " "
+    html << tree_view_icon(userfile.level) if @scope.custom[:tree_sort] && userfile.level.to_i > 0
     html << link_to_userfile_if_accessible(userfile, nil, link_options)
     if userfile.hidden?
       html << " "
@@ -51,11 +44,11 @@ module UserfilesHelper
     userfile.sync_status.each do |syncstat|
       html << render(:partial => 'userfiles/syncstatus', :locals => { :syncstat => syncstat })
     end
-    
+
     html.join.html_safe
   end
 
-  def neighbor_file_link(neighbor, index, dir, options = {})
+  def neighbor_file_link(neighbor, index, dir, options = {}) #:nodoc:
     return "" unless neighbor
 
     if dir == :previous
@@ -70,6 +63,8 @@ module UserfilesHelper
     link_to text, {:action  => action, :id  => neighbor.id, :sort_index => index}, link_options
   end
 
+  # Generates a set of two links, one for a 'previous' file and one for a 'next' file.
+  # The argument +sort_index+ is the index of the 'current' file.
   def file_link_table(previous_userfile, next_userfile, sort_index, options = {})
     (
     "<div class=\"display_table\" style=\"width:100%\">" +
@@ -83,7 +78,7 @@ module UserfilesHelper
 
   # Generates links to pretty file content for userfiles
   # of type TextFile or ImageFile; this method is going to
-  # be replaced by a proper generic framework in 4.2.0 !
+  # be replaced by a proper generic framework in 4.3.0 !
   def data_link(file_name, userfile)
     display_name  = Pathname.new(file_name).basename.to_s
     return h(display_name) unless userfile.is_locally_synced?

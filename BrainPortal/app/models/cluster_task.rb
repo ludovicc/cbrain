@@ -350,13 +350,29 @@ class ClusterTask < CbrainTask
   #
   #     make_available(6, "mincfiles/")
   #
-  # Will make userfile with ID 6 available at
+  # will make userfile with ID 6 available at
   # <workdir>/mincfiles/<name of userfile with ID 6>
   #
-  # +userfile+ can either be an ID or an userfile
+  # +userfile+ can either be an ID or a Userfile
   # object. Note that just like safe_symlink, this method
   # will silently replace an existing symlink at +file_path+
-  def make_available(userfile, file_path)
+  #
+  # In the case where +userfile+ is a FileCollection, an optional
+  # +userfile_sub_path+ can be provided to specify that the
+  # symlink will point not to the +userfile+ itself, but to
+  # a relative path in it. E.g. if userfile ID 99 points
+  # to a FileCollection named "Abcd" with content:
+  #
+  #   Abcd/hello.txt
+  #   Abcd/subdir/goodbye.txt
+  #
+  # then
+  #
+  #     make_available(99, "mygoodbye.txt", "subdir/goodbye.txt")
+  #
+  # will create a link 'mygoodbye.txt' that points deeper in the
+  # directory structure.
+  def make_available(userfile, file_path, userfile_sub_path = nil)
     cb_error "File path argument must be relative" if
       file_path.blank? || file_path.to_s =~ /^\//
 
@@ -365,13 +381,15 @@ class ClusterTask < CbrainTask
     userfile.sync_to_cache
 
     # Compute the final absolute path to the target file symlink
-    full_path     = Pathname.new("#{self.full_cluster_workdir}/#{file_path}")
-    full_path    += userfile.name if file_path.to_s.end_with?("/")
+    file_path     = Pathname.new(file_path.to_s)
+    file_path    += userfile.name if file_path.to_s.end_with?("/")
+    full_path     = Pathname.new(self.full_cluster_workdir) + file_path
 
     # Pathname objects for the userfile and bourreau directories
-    workdir_path  = Pathname.new(self.cluster_shared_dir)
-    dp_cache_path = Pathname.new(self.bourreau.dp_cache_dir)
-    userfile_path = Pathname.new(userfile.cache_full_path)
+    workdir_path   = Pathname.new(self.cluster_shared_dir)
+    dp_cache_path  = Pathname.new(self.bourreau.dp_cache_dir)
+    userfile_path  = Pathname.new(userfile.cache_full_path)
+    userfile_path += Pathname.new(userfile_sub_path) if userfile_sub_path.present?
 
     # Figure out the two parts of the new symlink target; from file_path to
     # the DP cache symlink, and from the DP symlink to the userfile
@@ -1431,7 +1449,7 @@ class ClusterTask < CbrainTask
     end
   end
 
-  
+
   # Submit the actual job request to the cluster management software.
   # Expects that the WD has already been changed.
   def submit_cluster_job
@@ -1506,6 +1524,14 @@ class ClusterTask < CbrainTask
     job.walltime = self.job_walltime_estimate
     job.goes_to_vm = self.job_template_goes_to_vm?
     job.task_id = self.id
+
+    # Note: all extra_qsub_args defined in the tool_configs (bourreau, tool and bourreau/tool)
+    # are appended by level of priority. 'less' specific first, 'more' specific later.
+    # In this way if the same option is defined twice the more specific one will be the used.
+    job.tc_extra_qsub_args  = ""
+    job.tc_extra_qsub_args += "#{bourreau_glob_config.extra_qsub_args} " if bourreau_glob_config
+    job.tc_extra_qsub_args += "#{tool_glob_config.extra_qsub_args} "     if tool_glob_config
+    job.tc_extra_qsub_args += "#{tool_config.extra_qsub_args} "          if tool_config
 
     # Log version of Scir lib
     drm     = scir_class.drm_system
@@ -1645,23 +1671,38 @@ class ClusterTask < CbrainTask
     return nil
   end
 
+
+
+  ##################################################################
+  # Docker support methods
+  ##################################################################
+
+  # Returns true if the task's ToolConfig is configured to point to a docker image
+  # for the task's processing.
   def use_docker?
     return self.tool_config.docker_image.present?
   end
-  
-  # Returns the command line(s) associated with the task, wrapped in a Docker call if a Docker image has to be used.
+
+  # Return the 'docker' command to be used for the task; this is fetched
+  # from the Bourreau's own attribute. Default: "docker".
+  def docker_executable_name
+    return RemoteResource.current_resource.docker_executable_name.presence || "docker"
+  end
+
+  # Returns the command line(s) associated with the task, wrapped in
+  # a Docker call if a Docker image has to be used.
   def docker_commands
-    commands = self.cluster_commands  
+    commands = self.cluster_commands
     commands_joined=commands.join("\n");
 
     cache_dir=RemoteResource.current_resource.dp_cache_dir;
     task_dir=self.bourreau.cms_shared_dir;
-    docker_commands = "cat << DOCKERJOB > .dockerjob.sh
-#!/bin/bash\n
+    docker_commands = "cat << \"DOCKERJOB\" > .dockerjob.sh
+#!/bin/bash -l\n
 #{commands_joined}\n
 DOCKERJOB\n
 chmod 755 ./.dockerjob.sh\n
-docker run --rm -v $PWD:/cbrain-script -v #{cache_dir}:#{cache_dir} -v #{task_dir}:#{task_dir} -w /cbrain-script #{self.tool_config.docker_image} /cbrain-script/.dockerjob.sh \n
+#{docker_executable_name} run --rm -v ${PWD}:${PWD} -v #{cache_dir}:#{cache_dir} -v #{task_dir}:#{task_dir} -w ${PWD} #{self.tool_config.docker_image} ${PWD}/.dockerjob.sh \n
 "
     return docker_commands
   end
@@ -1770,14 +1811,17 @@ docker run --rm -v $PWD:/cbrain-script -v #{cache_dir}:#{cache_dir} -v #{task_di
 end
 
 # Patch: pre-load all model files for the subclasses
-Dir.chdir(CBRAIN::TasksPlugins_Dir) do
-  Dir.glob("*.rb").each do |model|
-    next if model == "cbrain_task_class_loader.rb"
-    model.sub!(/.rb$/,"")
-    unless CbrainTask.const_defined? model.classify
-      #puts_blue "Loading CbrainTask subclass #{model.classify} from #{model}.rb ..."
-      require_dependency "#{CBRAIN::TasksPlugins_Dir}/#{model}.rb"
+[ CBRAIN::TasksPlugins_Dir, CBRAIN::TaskDescriptorsPlugins_Dir ].each do |dir|
+  Dir.chdir(dir) do
+    Dir.glob("*.rb").each do |model|
+      next if [
+        'cbrain_task_class_loader.rb',
+        'cbrain_task_descriptor_loader.rb'
+      ].include?(model)
+
+      model.sub!(/.rb$/, '')
+      require_dependency "#{dir}/#{model}.rb" unless
+        [ model.classify, model.camelize ].any? { |m| CbrainTask.const_defined?(m) rescue nil }
     end
   end
 end
-

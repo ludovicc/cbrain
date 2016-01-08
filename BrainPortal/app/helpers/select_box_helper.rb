@@ -60,6 +60,38 @@ module SelectBoxHelper
     select_tag parameter_name, grouped_options, select_tag_options
   end
 
+  # Create a standard site select box for selecting a site id for a form.
+  # The +parameter_name+ argument will be the name of the parameter
+  # when the form is submitted and the +select_tag_options+ hash will be sent
+  # directly as options to the +select_tag+ helper method called to create the element.
+  # The +options+ hash can contain either or both of the following:
+  # [selector] used for default selection. This can be a Site object, a site id (String or Fixnum),
+  #            or any model that has a site_id attribute.
+  # [sites] the array of Site objects used to build the select box. Defaults to +Site.order(:name).all+.
+  # +options+ need not be hash, the default selected item can be passed as an argument.
+  # When calling site_select, set the :prompt option in select_tag_options hash, to the text you want
+  # displayed when no option is selected
+  def site_select(parameter_name = "site", options = {}, select_tag_options = {} )
+     options  = { :selector => options } unless options.is_a?(Hash)
+     sites = options[:sites] || Site.order(:name).all
+     selector = options[:selector]
+
+     if selector.respond_to?(:site_id)
+       selected = selector.site_id.to_s
+     elsif selector.is_a?(Site)
+       selected = selector.id.to_s
+     else
+       selected = selector.to_s
+     end
+
+     site_options = sites.map{ |s| [s.name, s.id]}
+
+     select_tag parameter_name, options_for_select(site_options, selected), select_tag_options
+  end
+
+
+
+
   # Create a standard groups select box for selecting a group id for a form.
   # The +parameter_name+ argument will be the name of the parameter
   # when the form is submitted and the +select_tag_options+ hash will be sent
@@ -249,6 +281,7 @@ module SelectBoxHelper
   #            or any model that has a tool_config attribute.
   # [tool_configs] the array of ToolConfig objects used to build the select box. Defaults to all tool configs
   #                  accessible by the current_user.
+  # [allow_offline] by default the offline tc will be disabled. If this option is set to true the tc will be selectable
   #
   # The selection box will partition the ToolConfig objects by 'categories', where there
   # are three such categories:
@@ -260,6 +293,8 @@ module SelectBoxHelper
   def tool_config_select(parameter_name = 'tool_config_id', options = {}, select_tag_options = {})
     options       = { :selector => options } unless options.is_a?(Hash)
     selector      = options[:selector]
+    allow_offline = options[:allow_offline] == true ? true : false
+
     if selector.respond_to?(:tool_config_id)
       selected = selector.tool_config_id.to_s
     elsif selector.is_a?(ToolConfig)
@@ -325,7 +360,7 @@ module SelectBoxHelper
         pairlist = []
         tool_tool_configs.each do |tc|
           desc     = tc.version_name || tc.short_description
-          tc_pair  = !b_is_online ? [ desc, tc.id.to_s, {:disabled => "true"} ] : [ desc, tc.id.to_s ]
+          tc_pair  = !b_is_online && !allow_offline ? [ desc, tc.id.to_s, {:disabled => "true"} ] : [ desc, tc.id.to_s ]
           pairlist << tc_pair
         end
         if same_tool && (! same_bourreau || ordered_bourreau_ids.size == 1)
@@ -464,7 +499,6 @@ module SelectBoxHelper
 
     type_select(parameter_name, options.dup.merge({:types => task_types, :generate_descendants => generate_descendants, :include_top => include_top}), select_tag_options)
   end
-
 
   # Create a standard types select box for selecting a types type for a form.
   # The +parameter_name+ argument will be the name of the parameter

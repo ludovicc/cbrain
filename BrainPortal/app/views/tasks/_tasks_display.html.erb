@@ -22,39 +22,323 @@
 #
 -%>
 
+<%
+  batch_view = @scope.custom[:batch] rescue nil
+  list = @tasks.map { |t| [(t[:count] == 1 ? :task : :batch), t[:batch], t[:count], t[:first]] }
 
-<%= render :partial => 'shared/active_filters', :locals => {:model => :cbrain_task} %>
-
-
-<div class="pagination">
-  <%= render :partial => "pagination" %>
-</div>
-
-<%=
-  index_table(@paginated_list, :class => "resource_list", :id => "tasks_table") do |t|
-    t.column(select_all_checkbox "task_checkbox")
-    t.sort_column("Task Type", 'CbrainTask', 'type', :filters => basic_filters_for(@filtered_scope, @header_scope, CbrainTask, :type)) { |t| t.pretty_name }
-    t.sort_column("Description", 'CbrainTask', 'description')
-    t.sort_column("Owner", 'User', 'login', :filters => association_filters_for(@filtered_scope, @header_scope, CbrainTask, :user, :name_method => :login))
-    unless current_project
-      t.sort_column("Project", 'Group', 'name', :filters => association_filters_for(@filtered_scope, @header_scope, CbrainTask, :group))
-    end
-    t.sort_column("Execution Server", 'RemoteResource', 'name', :filters => association_filters_for(@filtered_scope, @header_scope, CbrainTask, :bourreau, :association_table => :remote_resources))
-t.sort_column("Virtual Machine", 'CbrainTask', 'vm_id', :filters => basic_filters_for(@filtered_scope, @header_scope, CbrainTask, :vm_id))
-    t.sort_column("Current Status", 'CbrainTask', 'status', :filters => basic_filters_for(@filtered_scope, @header_scope, CbrainTask, :status))
-    t.column("Run Number")
-    t.sort_column("Workdir Size", 'CbrainTask', 'cluster_workdir_size')
-    t.reverse_sort_column("Time Submitted", 'CbrainTask', 'created_at')
-    t.reverse_sort_column("Last Updated", 'CbrainTask', 'updated_at')
-    t.row_override do |batch_id|
-      render :partial => 'tasks/batch_view', :locals => {:batch_id => batch_id}
-    end
-  end
+  # This table's columns accept 4 arguments (type, id, count and task) and are specially made
+  # to render 3 row types;
+  #
+  # - Task rows (+type+ is :task). +id+ is the task's batch id, +count+ is not used (can be nil)
+  #   and +task+ is the task object to render.
+  #
+  # - Batch rows (+type+ is :batch). +id+ is the batch's id, +count+ is the batch's task count
+  #   and +task+ is the first task of the batch.
+  #
+  # - Loaded batch rows (+type+ is :loaded_batch). +id+ is the batch's id, +count+ is not used and
+  #   +task+ is the first task of the batch. This row type is used for AJAX-loaded batch headers.
+  table = dynamic_scoped_table(list,
+    :id         => "tasks_table",
+    :class      => [ :resource_list ],
+    :render     => false,
+    :order_map  => {
+      :owner        => { :a => 'users.login',           :j => User     },
+      :project      => { :a => 'groups.name',           :j => Group    },
+      :server       => { :a => 'remote_resources.name', :j => [Bourreau, 'id', 'bourreau_id'] },
+      :workdir_size => { :a => 'cluster_workdir_size' }
+    },
+    :filter_map => {
+      :owner   => { :a => 'user_id'     },
+      :project => { :a => 'group_id'    },
+      :server  => { :a => 'bourreau_id' }
+    }
+  ) do |t|
 %>
+  <%
+    t.paginate(:collection => @tasks) unless @row_fetch
 
-<%= center_legend("Workdir archiving status symbols:", [
-      [ colored_archived_status(:workdir),  "On Cluster"  ],
-      [ colored_archived_status(:userfile), "As File"     ],
+    t.row do |type,id,count,task|
+      case type
+      when :task
+        available = @bourreau_status[task.bourreau.id]
+        {
+          :id    => "task_#{task.id}",
+          :class => [:task, (available ? :available : :unavailable)],
+          :select_param => ('tasklist[]' if available),
+          :select_value => (task.id      if available),
+          :html => {
+            :'data-task-id'  => task.id,
+            :'data-batch-id' => id,
+          }
+        }
+      when :batch, :loaded_batch
+        {
+          :id    => "batch_#{id}",
+          :class => [ :batch ],
+          :select_param => 'batch_ids[]',
+          :select_value => id,
+          :html => {
+            :'data-batch-id' => id
+          }
+        }
+      end
+    end
+  %>
+
+  <% if batch_view %>
+    <%
+      t.column('', :expand,
+        :pretty_name => "Batch"
+      ) do |type,id,count,task|
+    %>
+      <% next if type == :task %>
+      <%
+        if type == :loaded_batch
+          attributes = {
+            :class => [ 'batch-btn', 'ui-icon', 'ui-icon-minus' ],
+            :title => "Expand batch"
+          }
+        elsif count <= @scope.pagination.per_page.to_i
+          attributes = {
+            :class => [ 'batch-btn', 'ui-icon', 'ui-icon-plus' ],
+            :title => "Expand batch",
+            :'data-batch-type' => 'ajax_fetch',
+            :'data-batch-url'  => url_for(:action => :batch_list, :batch_id => id)
+          }
+        else
+          attributes = {
+            :class => [ 'batch-btn', 'ui-icon', 'ui-icon-folder-open' ],
+            :title => "Open batch",
+            :'data-batch-type' => 'html_link',
+            :'data-batch-url'  =>
+              url_for(scope_filter_params(@scope, :set, {
+                :attribute => 'batch_id',
+                :value     => task.batch_id
+              }))
+          }
+        end
+      %>
+      <span <%= attributes.to_html_attributes.html_safe %>></span>
+    <% end %>
+  <% end %>
+
+  <%
+    t.column("Task Type", :type,
+      :sortable => true,
+      :filters  => default_filters_for(@base_scope, @custom_scope, :type)
+    ) do |type,id,count,task|
+  %>
+    <% case type %>
+    <% when :task %>
+      <%= tree_view_icon(task.level) if @showing_batch || @row_fetch %>
+      <%= link_to_task_if_accessible(task, nil, :name => task.pretty_name) %>
+    <% when :batch, :loaded_batch %>
+      <%= task.pretty_name %>
+    <% end %>
+  <% end %>
+
+  <%
+    t.column("Description", :description,
+      :sortable => true
+    ) do |type,id,count,task|
+      overlay_description(task.description, :header_width => 35) unless type == :loaded_batch
+    end
+
+    t.column("Virtual Machine", :vm_id,
+      :sortable => true,
+      :filters  => default_filters_for(@base_scope, @custom_scope, User)
+        ) do |type,id,count,task|
+        vm_id
+    end
+        
+    t.column("Owner", :owner,
+      :sortable => true,
+      :filters  => default_filters_for(@base_scope, @custom_scope, User)
+    ) do |type,id,count,task|
+      link_to_user_if_accessible(task.user) unless type == :loaded_batch
+    end
+
+    t.column("Project", :project,
+      :sortable => true,
+      :filters  => default_filters_for(@base_scope, @custom_scope, Group)
+    ) do |type,id,count,task|
+      link_to_group_if_accessible(task.group) unless type == :loaded_batch
+    end unless current_project
+
+    t.column("Execution Server", :server,
+      :sortable => true,
+      :filters  => scoped_filters_for(
+        @base_scope, @custom_scope, :bourreau_id,
+        scope: @scope,
+        label: 'remote_resources.name',
+        association: [Bourreau, 'id', 'bourreau_id']
+      )
+    ) do |type,id,count,task|
+      link_to_bourreau_if_accessible(task.bourreau) unless type == :loaded_batch
+    end
+  %>
+
+  <%
+    t.column("Current Status", :status,
+      :sortable => true,
+      :filters  => default_filters_for(@base_scope, @custom_scope, :status)
+    ) do |type,id,count,task|
+  %>
+    <%
+      case type
+      when :task
+        next colored_status(task.status)
+      when :batch
+        ntasks   = count
+        statuses = {}
+        CbrainTask
+          .real_tasks
+          .where(:batch_id => id)
+          .group(:status)
+          .count
+          .each do |s,c|
+            s = 'Failed' if s =~ /Fail/i
+            statuses[s] ||= 0
+            statuses[s]  += c
+          end
+      when :loaded_batch
+        ntasks   = @tasks.size
+        statuses = {}
+        @tasks
+          .map { |t| t[:first] }
+          .hashed_partitions { |t| t.status =~ /Fail/i ? 'Failed' : t.status }
+          .each { |s,t| statuses[s] = t.size }
+      end
+    %>
+    <%= pluralize(ntasks, "task") + ":" if statuses.size > 1 %>
+    <%=
+      statuses
+        .keys
+        .sort { |a,b| cmp_status_order(a, b) }
+        .map  { |s| "#{statuses[s]} x #{colored_status(s)}" }
+        .join(', ')
+        .html_safe
+    %>
+  <% end %>
+
+  <% t.column("Run Number", :run) { |type,id,count,task| task.run_number.to_s if type == :task } %>
+
+  <%
+    t.column("Workdir Size", :workdir_size,
+      :sortable => true
+    ) do |type,id,count,task|
+  %>
+    <% case type %>
+    <% when :task %>
+      <% if task.share_wd_tid %>
+        (Shared)
+      <% else %>
+        <% as = task.archived_status %>
+        <%= colored_archived_status(as) %>
+        <% if task.cluster_workdir_size.present? %>
+          <%= colored_pretty_size(task.cluster_workdir_size, :blank => '') %>
+        <% elsif as == :userfile && ar_file_size = Userfile.where(:id => task.workdir_archive_userfile_id).raw_first_column(:size)[0] %>
+          (<%= colored_pretty_size(ar_file_size, :blank => '') %>)
+        <% end %>
+      <% end %>
+    <% when :batch, :loaded_batch %>
+      <%= colored_pretty_size(CbrainTask.real_tasks.where(:batch_id => id).sum(:cluster_workdir_size)) %>
+    <% end %>
+  <% end %>
+
+  <%
+    t.column("Time Submitted", :created_at,
+      :sortable => true
+    ) do |type,id,count,task|
+      case type
+      when :task
+        to_localtime(task.created_at, :datetime)
+      when :batch, :loaded_batch
+        to_localtime(task.launch_time, :datetime)
+      end
+    end
+
+    t.column("Last Updated", :updated_at,
+      :sortable => true
+    ) do |type,id,count,task|
+      case type
+      when :task
+        to_localtime(task.updated_at, :datetime)
+      when :batch, :loaded_batch
+        to_localtime(
+          CbrainTask
+            .real_tasks
+            .where(:batch_id => id)
+            .order('cbrain_tasks.updated_at desc')
+            .first
+            .updated_at,
+          :datetime
+        )
+      end
+    end
+  %>
+<% end %>
+
+<%-
+# This partial has 2 modes of operation; table display and row fetch.
+# Table display is the standard mode; it renders the entire task table, headers
+# and pagination included.
+# Row fetch mode is used when making an AJAX request to fetch a batch's tasks.
+# Only a loaded batch header and the task themselves are rendered.
+-%>
+
+<% if @row_fetch %>
+  <% if @tasks.empty? %>
+    <tr class="batch">
+      <td class="dt-table-wide">
+        This batch of tasks has disappeared
+      </td>
+    </tr>
+  <% else %>
+    <%= table.render :row, [[ :loaded_batch, @tasks.first[:batch], nil, @tasks.first[:first] ]] %>
+    <%= table.render :row, list %>
+  <% end %>
+<% else %>
+  <%=
+    render(:partial => 'shared/active_filters', :locals  => {
+      :scope => @scope,
+      :model => CbrainTask
+    })
+  %>
+
+  <div class="pagination">
+    <div class="pagination_left_side">
+      <%=
+        scope_custom_link(
+          "Switch to #{batch_view ? 'List' : 'Batch'} View",
+          @scope, { 'batch' => !batch_view },
+          link: { :ajax => true }
+        )
+      %>
+    </div>
+    <div class="page_links">
+      (<%= pluralize @total_tasks, "task" %>)
+    </div>
+    <div class="pagination_right_side">
+      <% if @total_space_known > 0 %>
+        Total task space used: <%= colored_pretty_size(@total_space_known) %>
+      <% end %>
+      <% if @total_space_unkn  > 0 %>
+        (<%= pluralize @total_space_unkn, "task" %> without space estimates)
+      <% end %>
+    </div>
+  </div>
+
+  <% content_for :scripts do %>
+    <% javascript_tag (render :partial => "batch_list.js.erb", :formats => [:js]).to_s %>
+  <% end %>
+
+  <%= table.render %>
+
+  <%=
+    center_legend("Workdir archiving status symbols:", [
+      [ colored_archived_status(:workdir),  "On Cluster" ],
+      [ colored_archived_status(:userfile), "As File"    ],
     ])
-%>
-
+  %>
+<% end %>
