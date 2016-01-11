@@ -148,7 +148,7 @@
       :sortable => true,
       :filters  => default_filters_for(@base_scope, @custom_scope, User)
         ) do |type,id,count,task|
-        vm_id
+        task.vm_id
     end
         
     t.column("Owner", :owner,

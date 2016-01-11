@@ -26,24 +26,11 @@
   <%= new_model_button 'Create VM Factory', new_vm_factory_path %>
 </div>
 
-<%= index_table(VmFactory.all, :class => "resource_list") do |t| %>
-<% 
-     t.sort_column("Name", "VMFactory", "id"){ |t| link_to_model_if_accessible VmFactory,t.id}
-     t.sort_column("Disk Image", "VMFactory", "disk_image_file_id"){ |t| dib = DiskImageBourreau.where(:disk_image_file_id => t.disk_image_file_id).first; dib.blank? ? "undefined" : dib.name }
-     t.sort_column("τ", "VMFactory", "tau"){ |t| t.tau }
-t.sort_column("μ+", "VMFactory", "mu_plus"){ |t| t.mu_plus }
-t.sort_column("μ-", "VMFactory", "mu_minus"){ |t| t.mu_minus }
-t.sort_column("ν+", "VMFactory", "nu_plus"){ |t| t.nu_plus }
-t.sort_column("ν-", "VMFactory", "nu_minus"){ |t| t.nu_minus }
-t.sort_column("k+", "VMFactory", "k_plus"){ |t| t.k_plus }
-t.sort_column("k-", "VMFactory", "k_minus"){ |t| t.k_minus }
-t.sort_column("Last iteration", "VMFactory", "timestamp_of_last_iteration"){ |t| timestamp = t.timestamp_of_last_iteration ; timestamp.blank? ? Time.new(0) : timestamp}
-t.column("Up?"){ |t| t.timestamp_of_last_iteration.blank? ? "false" : ( t.alive? ? "true" : "false")} 
-t.column("Operations") { |t| 
-    links = link_to 'Start', start_vm_factory_path(t.id)
-    links += "  "
-    links += link_to 'Stop', stop_vm_factory_path(t.id)
-}
-  %>
-<% end %> 
+<%= dynamic_table(VmFactory.all) do |t|
+    t.column("Name", :name)
+    t.column("Disk Image") do |tt|
+      dib = DiskImageBourreau.where(:disk_image_file_id => tt.disk_image_file_id).first; dib.blank? ? "undefined" : dib.name
+     end
 
+ end
+    %>
