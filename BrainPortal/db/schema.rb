@@ -345,10 +345,7 @@ ActiveRecord::Schema.define(:version => 20150929193957) do
     t.integer  "group_id"
     t.integer  "ncpus"
     t.string   "docker_image"
-<<<<<<< HEAD
-=======
     t.string   "extra_qsub_args"
->>>>>>> origin/dev
   end
 
   add_index "tool_configs", ["bourreau_id"], :name => "index_tool_configs_on_bourreau_id"
