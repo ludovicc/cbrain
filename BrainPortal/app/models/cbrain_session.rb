@@ -30,7 +30,8 @@ require 'set'
 # to add additional reporting/monitoring logic, to cleanly support partial
 # updates and to validate certain session attributes.
 #
-# NOTE: This model is not database-backed
+# NOTE: This model is not database-backed, but the attribute 'session'
+# in it is the real Rails session object.
 class CbrainSession
 
   Revision_info=CbrainFileRevision[__FILE__] #:nodoc:
@@ -75,33 +76,6 @@ class CbrainSession
     @user = User.find_by_id(@session[:user_id]) unless
       @user && @user.id == @session[:user_id]
     @user
-  end
-
-  # Load +user+'s preferences (session attributes) in the session from the
-  # user's meta storage.
-  # If +user+ is not specified or nil, load_preferences will try to use the
-  # user bound to the session, if available.
-  def load_preferences(user = nil)
-    user  = self.user unless user.is_a?(User)
-    prefs = (user.meta[:preferences] || {})
-      .map    { |k,v| [k.to_sym, v] }
-      .to_h
-      .reject { |k,v| self.class.internal_keys.include?(k) }
-
-    @session.merge!(prefs)
-  end
-
-  # Save this session object's attributes as the +user+'s preferences in the
-  # user's meta storage (opposite of load_preferences).
-  # If +user+ is not specified or nil, save_preferences will try to use the
-  # user bound to the session, if available.
-  def save_preferences(user = nil)
-    user  = self.user unless user.is_a?(User)
-    prefs = @session
-      .reject { |k,v| self.class.internal_keys.include?(k) }
-      .cb_deep_clone
-
-    user.meta[:preferences] = (user.meta[:preferences] || {}).merge(prefs)
   end
 
   # Hash-like interface to session attributes

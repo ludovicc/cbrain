@@ -1,5 +1,5 @@
 
-<%-
+/*
 #
 # CBRAIN Project
 #
@@ -18,20 +18,26 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.  
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
--%>
+*/
 
-<h4>By Tag</h4>
-<%= overlay_ajax_link 'Create Tag', new_tag_path %>
+$(function () {
+  "use strict";
 
-<ul class="filter_menu">
-  <%  current_user.available_tags.includes(:group).each do |tag| %>
+  $('#bourreaux_table > .dt-table > .dt-body > tr').each(function () {
+    var row = $(this),
+        url = row.data('info-url');
 
-    <li id="tag_<%= tag.id %>" class="tag">
-      <%= render :partial => 'tags/tag_li', :locals  => {:tag  => tag} %>
-    </li>
+    /* No url given? Nothing to do. */
+    if (!url) return;
 
-  <% end %>
-</ul>
+    /* Fetch the missing bourreau row info */
+    $.get(url, function (data) {
+      row.replaceWith(data);
 
+      /* Notify the table that its content changed */
+      $('#bourreaux_table').trigger('refresh.dyn-tbl');
+    });
+  });
+});

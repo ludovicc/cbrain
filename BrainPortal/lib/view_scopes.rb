@@ -22,7 +22,7 @@
 
 # Helpers to apply user-specified scopes on CBRAIN's models or collections for
 # viewing purposes. Scopes are a flexible and safe way to define which filtering
-# and sorting rules to apply on a given collection before display and keep 
+# and sorting rules to apply on a given collection before display and keep
 # track of custom view options and pagination information.
 #
 # Scopes currently in use are usually stored in Rails' session, and can easily
@@ -984,22 +984,21 @@ module ViewScopes
         collection = collection.to_a unless
           (collection <= ActiveRecord::Base rescue nil)
 
-        # Clamp @page and @per_page to a sane range
-        page     = [1,  [@page.to_i,     99_999].min].max
-        per_page = [25, [@per_page.to_i, 1000  ].min].max
+        # Validate @total and clamp @page and @per_page to a sane range
+        total    = (@total || collection.size).to_i
+        per_page = [25, @per_page.to_i, 1000].sort[1]
+        page     = [1, @page.to_i, (total + per_page - 1) / per_page].sort[1]
 
         # Is there a native paginate method available?
         if collection.respond_to?(:paginate)
           collection.paginate(
             :page          => page,
             :per_page      => per_page,
-            :total_entries => @total
+            :total_entries => total
           )
 
         # Otherwise, just manually create a WillPaginate::Collection
         else
-          total = @total || collection.length
-
           WillPaginate::Collection.create(page, per_page, total) do |pager|
             pager.replace(collection[pager.offset, pager.per_page].to_a)
           end
@@ -1209,19 +1208,28 @@ module ViewScopes
   #  instead of the full version required by the +_scopes+ parameter.
   #
   #  To specify which scope to update, have +_simple_filters+'s value be the
-  #  name of the target scope. If such a scope is not found (+_simple_filters+
-  #  is '1' or 'true', for example), +update_session_scopes+ will fall back
-  #  to the controller's name (common convention for index pages) then to
-  #  +default_scope_name+. For example, doing:
+  #  name of the target scope. If such a scope is not found,
+  #  +update_session_scopes+ will then try the controller's name (common
+  #  convention for index pages) and +default_scope_name+. If none of these are
+  #  present (on a new CBRAIN session, for example), a new scope named after
+  #  +_simple_filters+'s value will be created, unless +_simple_filters+'s value
+  #  is empty or a true-like value (1, 't', 'true', 'TRUE', ...), in which
+  #  case the new scope's name will fall back to +default_scope_name+. For
+  #  example, doing (with an active session):
   #    http://portal.cbrain.ca/userfiles?_simple_filters=tasks&...
   #  would update the 'tasks' scope, if it exists, while:
   #    http://portal.cbrain.ca/userfiles?_simple_filters=1&...
   #  would try to update the 'userfiles' scope, falling back to
-  #  +default_scope_name+ if there is no 'userfiles' scope.
+  #  +default_scope_name+ if there is no 'userfiles' scope. On a blank/new
+  #  session, doing:
+  #    http://portal.cbrain.ca/userfiles?_simple_filters=1&...
+  #  would create a new scope named +default_scope_name+, while:
+  #    http://portal.cbrain.ca/userfiles?_simple_filters=tasks&...
+  #  would create a scope named 'tasks'.
   #
   #  Note that this option cannot be used in conjunction with +_scopes+ or
   #  +_default_scope+, and that every query parameter (other than
-  #  +_simple_filters+, +_scope_mode+ and pagination parameters) is considered
+  #  +_simple_filters+, +_scope_mode+, and pagination parameters) is considered
   #  to be a filter.
   #
   # Note that the scopes in +_default_scope+ and +_scopes+ can be in
@@ -1234,12 +1242,15 @@ module ViewScopes
 
     # Special _simple_filters filter syntax
     if (simple = params['_simple_filters'])
-      # Determine which scope to update
       known      = (current_session['scopes'] ||= {})
+      default    = default_scope_name
       controller = params[:controller].to_s.downcase
+
+      # Determine which scope to update (or create)
       name   = simple     if known.has_key?(simple)
       name ||= controller if known.has_key?(controller)
-      name ||= default_scope_name
+      name ||= default    if known.has_key?(default)
+      name ||= (simple =~ /^(1|t|true)$/i ? default : simple)
 
       # Then convert other query parameters to Scope::Filter hashes
       excluded = [
@@ -1262,7 +1273,7 @@ module ViewScopes
 
       # Then decompress, if required
       scopes = scopes.map do |n, s|
-        return [n, s] if s.is_a?(Hash)
+        next [n, s] if s.is_a?(Hash)
         [ n, ViewScopes.decompress_scope(s) ]
       end.to_h
 

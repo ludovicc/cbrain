@@ -1,5 +1,5 @@
 
-<%-
+/*
 #
 # CBRAIN Project
 #
@@ -20,7 +20,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
--%>
+*/
 
 $(function () {
   "use strict";
@@ -62,8 +62,8 @@ $(function () {
     });
   };
 
-  $(document).delegate('#tasks_table', 'new_content.batch_list', function () {
-    var table = $(this);
+  $(document).delegate('#tasks_table, #tasks_display', 'new_content.batch_list', function () {
+    var table = $('#tasks_display');
 
     /* Redirect clicks on the batch's type to the expand button */
     table
