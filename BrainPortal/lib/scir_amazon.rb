@@ -169,15 +169,7 @@ class ScirAmazon < ScirCloud
     
     def run(job)
       task = CbrainTask.find(job.task_id)
-      disk_image_bourreaux = Bourreau.where(:disk_image_file_id => task.params[:disk_image])
-      image_id = nil
-      tag_value = nil
-      disk_image_bourreaux.each do |b|
-        tag_value = b.name
-      	image_id = DiskImageConfig.where(:disk_image_bourreau_id => b.id, :bourreau_id => RemoteResource.current_resource.id).first.disk_image_id
-      end
-      raise "Cannot find Disk Image Bourreau associated with file id #{task.params[:disk_image]} or Disk Image Bourreau has no EC2 image id for #{RemoteResource.current_resource.name}" unless !image_id.blank?
-      vm = submit_VM("CBRAIN Worker", image_id, task.params[:instance_type], tag_value) 
+      vm = submit_VM("CBRAIN Worker", task.params[:disk_image], task.params[:instance_type], "CBRAIN worker") 
       return vm.id.to_s
     end
 

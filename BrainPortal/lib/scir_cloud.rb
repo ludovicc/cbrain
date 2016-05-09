@@ -34,5 +34,9 @@ class ScirCloud < Scir
     raise "To be implemented in child class"
   end
 
+  def get_available_disk_images(bourreau)
+    raise "To be implemented in child class"
+  end
+
 end
 

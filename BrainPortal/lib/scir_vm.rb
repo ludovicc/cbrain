@@ -94,7 +94,7 @@ class ScirVM < Scir
     port = vm_task.params[:ssh_port]
     master = SshMaster.find_or_create(user,ip,port)
     # Tunnel used to sshfs from the VM to the host.
-    master.add_tunnel(:reverse,vm_task.get_VM_to_host_ssh_tunnel_port,'localhost',22) unless ( master.get_tunnels(:reverse).size !=0) 
+    master.add_tunnel(:reverse,vm_task.params[:vm_ssh_tunnel_port].to_i,'localhost',22) unless ( master.get_tunnels(:reverse).size !=0) 
     CBRAIN.with_unlocked_agent 
     master.start
     raise "Cannot establish connection with VM id #{vm_task.id} (#{master.ssh_shared_options})" unless master.is_alive?
