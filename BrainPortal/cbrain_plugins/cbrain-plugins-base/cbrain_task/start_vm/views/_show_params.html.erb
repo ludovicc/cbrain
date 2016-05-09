@@ -23,30 +23,14 @@
 -%>
 
 <strong>Disk image: </strong>
-  <%= h(Userfile.find(params[:disk_image]).name) %>
-<br/>
-<strong>VM username:</strong>
-   <%= params[:vm_user] %>
+  <%= params[:disk_image] %>
 <br/>
 <strong>VM boot timeout (s):</strong>
    <%= params[:vm_boot_timeout] %>
 <br/>
-<strong>VM CPUs:</strong>
-   <%= params[:vm_cpus] %>
-<br/>
 <strong>VM job slots:</strong>
    <%= params[:job_slots] %>
 <br/>
-<strong>VM RAM:</strong>
-   <%= params[:vm_ram_gb] %> GB
-<br/>
-<strong>QEMU options:</strong>
-   <%= params[:qemu_params] %>
-<br/>
-<strong>Use emulation:</strong>
-  <%= (params[:emulation] == "1")? "yes" : "no" %>
-<br/>
-<hr/>
 <strong>VM status:</strong>
    <span style="color: blue"><%= params[:vm_status] %></span>
 <br/>
@@ -55,9 +39,6 @@
 <br/>
 <strong>SSH port:</strong>
    <%= params[:ssh_port] %>
-<br/>
-<strong>Display:</strong>
-   :<%= params[:vnc_display] %>
 <br/>
 
 

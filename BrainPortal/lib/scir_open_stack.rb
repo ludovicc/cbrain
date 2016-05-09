@@ -42,6 +42,19 @@ class ScirOpenStack < ScirCloud
     end
   end
 
+  def get_available_disk_images(bourreau)
+    images = Array.new
+    username = bourreau.open_stack_user_name
+    password = bourreau.open_stack_password
+    auth_url = bourreau.open_stack_auth_url
+    tenant_name = bourreau.open_stack_tenant
+    os = OpenStack::Connection.create({:username => username, :api_key=> password, :auth_method=>"password", :auth_url => auth_url, :authtenant_name =>tenant_name, :service_type=>"compute"})
+    os.list_images.each do |image|
+      images << [image[:name].to_s, image[:id]]
+    end
+    return images
+  end
+
   # Inner Session class 
   class Session < Scir::Session #:nodoc:
 

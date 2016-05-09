@@ -24,33 +24,22 @@ class CbrainTask::StartVM #:nodoc:
   
   def validate_params #:nodoc:
     message = ""
-    message += "Missing disk image file! "  if params[:disk_image].blank?
-
-    message += "Missing VM user! "  if params[:vm_user].blank?
+    message += "Missing disk image! "  if params[:disk_image].blank?
 
     message += "Missing VM boot timeout! "  if params[:vm_boot_timeout].blank?
     message += "Boot timeout has to be an integer! " if !is_integer? params[:vm_boot_timeout]
-
+    
     message += "Missing number of instances! " if params[:number_of_vms].blank? 
     message += "Please don't try to start more than 20 instances at once for now. " if params[:number_of_vms].to_i > 20
     message += "Number of instances has to be an integer! " if !is_integer? params[:number_of_vms]
-
+    
     message += "Missing number of job slots! " if params[:job_slots].blank? 
     message += "Number of job slots has to be an integer! " if !is_integer? params[:job_slots]
+    
+    message+= "Missing cloud instance type!" if params[:instance_type].blank?
 
-    bourreau = Bourreau.find(ToolConfig.find(self.tool_config_id).bourreau_id)
-    if !bourreau.scir_class.new.is_a? ScirCloud
-      message+= "Missing number of CPUs ! " if params[:vm_cpus].blank?
-      message+= "Number of CPUs has to be an integer! " if !is_integer? params[:vm_cpus]
-
-      message+= "Missing RAM! " if params[:vm_ram_gb].blank? 
-      message+= "RAM has to be a numeric value " if !is_float? params[:vm_ram_gb]
-    else
-      message+= "Missing cloud instance type" if params[:instance_type].blank?
-    end
-
+    message+= "Missing VM user!" if params[:vm_user].blank?
     raise message unless message == ""
-
   end
 
   def is_integer?(a) #:nodoc:

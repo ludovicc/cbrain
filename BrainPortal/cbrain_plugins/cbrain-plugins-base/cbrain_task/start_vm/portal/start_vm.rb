@@ -31,15 +31,9 @@ class CbrainTask::StartVM < PortalTask
 
   def self.default_launch_args #:nodoc:
     {
-      :disk_image => 240, #centos disk image in test portal
-      :qemu_params => "-boot d -net nic -net user -localtime",
-      :emulation => "0",
       :vm_boot_timeout => 600,
       :number_of_vms => 1,
-      :vm_cpus => 2,
-      :vm_ram_gb => 4,
-      :job_slots => 2,
-      :instance_type => "",
+      :job_slots => 2
     }
   end
   
@@ -49,37 +43,11 @@ class CbrainTask::StartVM < PortalTask
 
   def before_form #:nodoc:
     params = self.params
-    ids    = params[:interface_userfile_ids]
-
-    cb_error "Expecting a single user file as input, found #{ids.size}" unless ids.size == 1
-
-    params[:disk_image]=ids[0]
-
-    # Check if disk image is associated to a virtual bourreau
-    virtual_bourreaux = DiskImageBourreau.where(:disk_image_file_id => params[:disk_image])
-    cb_error "File id #{params[:disk_image]} is not associated to any Virtual Bourreau. You cannot start a VM with it." unless virtual_bourreaux.size != 0 
-    cb_error "File id #{params[:disk_image]} has more than 1 Virtual Bourreau associated to it. This is not supported yet." unless virtual_bourreaux.size == 1
-    virtual_bourreau = virtual_bourreaux.first
-
-    params[:vm_user] = virtual_bourreau.disk_image_user
-
-    bourreau = Bourreau.find(ToolConfig.find(self.tool_config_id).bourreau_id)
-    if bourreau.scir_class.new.is_a? ScirCloud
-      configured = false 
-      virtual_bourreaux.each do |vb|
-        if DiskImageConfig.where(:disk_image_bourreau_id => vb.id, :bourreau_id => bourreau.id).size >= 1
-          configured = true
-          break
-        end
-      end
-      cb_error "Execution server #{bourreau.name} is not configured for disk image #{params[:disk_image]}" unless configured == true
-
-      params[:available_types] = bourreau.scir_class.new.get_available_instance_types
-
-    end
+    params[:available_disk_images] = bourreau.scir_class.new.get_available_disk_images(bourreau)
+    params[:available_instance_types] = bourreau.scir_class.new.get_available_instance_types
     ""
   end
-
+  
   def final_task_list #:nodoc:
     task_list = [ ]
     params[:number_of_vms].to_i.times{
