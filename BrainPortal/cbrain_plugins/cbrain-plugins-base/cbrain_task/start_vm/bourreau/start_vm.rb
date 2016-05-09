@@ -75,34 +75,9 @@ class CbrainTask::StartVM < ClusterTask
   end
 
   def cluster_commands #:nodoc:
-    params = self.params
-    snapshot_name = "image-snapshot-#{self.id}"
-    snapshot_creation = "qemu-img create -f qcow2 -b image #{snapshot_name}"
-
-    if Bourreau.find(self.bourreau_id).scir_class.new.is_a? ScirCloud
-    	self.params[:ssh_port] = 22
-    else	
-      #TODO (VM tristan) may fail in case someone (not us) already uses this port on the host
-      self.params[:ssh_port] = 2200 + ( self.id % 3000 ) #make sure this doesn't overlap with display ports which typically start at 5900
-    end
-    display_port = ( self.id % 100 )
-    self.params[:vnc_display] = display_port
-    self.save
-    
-    command = "#{snapshot_creation} ; "
-
-    if mybool(params[:emulation])
-      then 
-      command << "qemu-system-x86_64"
-      else
-      command << "qemu-kvm"
-    end
-    command << " -hda #{snapshot_name} -redir tcp:#{params[:ssh_port]}::22 -display vnc=:#{params[:vnc_display]} -smp #{params[:vm_cpus]} -m #{params[:vm_ram_gb]}g #{params[:qemu_params]}"
-    commands = [
-                "echo \"Command: #{command}\"",
-                command
-               ]
-    return  commands
+   [ "echo This will never execute" ] # if the cluster commands are
+                                      # empty, task will jump directly
+                                      # to state data ready.
   end
   
   def save_results #:nodoc:
@@ -191,7 +166,7 @@ class CbrainTask::StartVM < ClusterTask
   
   # Checks if the VM has booted. 
   def booted? 
-    addlog "Trying to ssh -p #{params[:ssh_port]} #{params[:vm_user]}@#{params[:vm_local_ip]}"
+    addlog "Trying to ssh #{params[:vm_user]}@#{params[:vm_local_ip]}"
     s = ScirVM.new
     master = s.get_ssh_master self
     return true
@@ -227,11 +202,6 @@ class CbrainTask::StartVM < ClusterTask
     return false
   end
   
-  # Returns the port binding the VM to the host's ssh daemon. 
-  def get_VM_to_host_ssh_tunnel_port
-    return DiskImageBourreau.where(:disk_image_file_id => params[:disk_image]).first.ssh_tunnel_port
-  end
-
   # Mounts a directory in the VM.
   # local_dir is the VM directory.
   # remote_dir is the directory on the Bourreau machine.
@@ -242,7 +212,7 @@ class CbrainTask::StartVM < ClusterTask
     
     # Port 2222 of localhost is bound to the ssh port of the host.  
     # See ScirVM.get_ssh_master
-    sshfs_command = "mkdir #{local_dir} -p ; umount #{local_dir} ; sshfs -p #{get_VM_to_host_ssh_tunnel_port} -C -o nonempty -o follow_symlinks -o reconnect -o ServerAliveInterval=15 -o StrictHostKeyChecking=no #{user}@localhost:#{remote_dir} #{local_dir}"
+    sshfs_command = "mkdir #{local_dir} -p ; umount #{local_dir} ; sshfs -p #{self.params[:vm_ssh_tunnel_port]} -C -o nonempty -o follow_symlinks -o reconnect -o ServerAliveInterval=15 -o StrictHostKeyChecking=no #{user}@localhost:#{remote_dir} #{local_dir}"
     addlog "Mounting dir: #{sshfs_command}"
     addlog scir.run_command(sshfs_command,self) 
     # leave time to fuse to mount the dir
