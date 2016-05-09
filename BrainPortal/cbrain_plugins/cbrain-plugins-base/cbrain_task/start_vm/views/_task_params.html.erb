@@ -43,6 +43,10 @@
    <%= text_field_tag :vm_boot_timeout.to_la, params[:vm_boot_timeout], size:4 %>
 <br/><br/>
 
+<strong>VM ssh tunnel port:</strong><br/>
+   <%= text_field_tag :vm_ssh_tunnel_port.to_la, params[:vm_ssh_tunnel_port], size:4 %>
+<br/><br/>
+
 <strong>Number of instances to start (&le;20):</strong><br/>
    <%= text_field_tag :number_of_vms.to_la, params[:number_of_vms], size:5 %>
 

@@ -28,6 +28,9 @@ class CbrainTask::StartVM #:nodoc:
 
     message += "Missing VM boot timeout! "  if params[:vm_boot_timeout].blank?
     message += "Boot timeout has to be an integer! " if !is_integer? params[:vm_boot_timeout]
+
+    message += "Missing ssh tunnel port! "  if params[:vm_ssh_tunnel_port].blank?
+    message += "ssh tunnel port has to be an integer! " if !is_integer? params[:vm_ssh_tunnel_port]
     
     message += "Missing number of instances! " if params[:number_of_vms].blank? 
     message += "Please don't try to start more than 20 instances at once for now. " if params[:number_of_vms].to_i > 20
