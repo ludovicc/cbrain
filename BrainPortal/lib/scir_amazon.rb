@@ -39,6 +39,16 @@ class ScirAmazon < ScirCloud
     return [ "t2.micro", "t2.small", "t2.medium", "m3.medium", "m3.large", "m3.xlarge", "m3.2xlarge", "c3.large", "c3.xlarge", "c3.2xlarge", "c3.4xlarge", "c3.8xlarge", "r3.large", "r3.xlarge", "r3.2xlarge", "r3.4xlarge", "r3.8xlarge", "g2.2xlarge", "i2.xlarge", "i2.2xlarge", "i2.4xlarge", "i2.8xlarge", "hs1.8xlarge" ]
   end
 
+  def get_available_key_pairs(bourreau)
+    keys = Array.new
+    ec2 = AWS::EC2.new(:access_key_id => bourreau.amazon_ec2_access_key_id, :secret_access_key => bourreau.amazon_ec2_secret_access_key)
+    region = ec2.regions[bourreau.amazon_ec2_region]
+    return "Invalid region: #{bourreau.amazon_ec2_region}" unless !region.blank?	
+    ec2 = region
+    region.key_pairs.each { |key| keys << [key.name] }
+    return keys
+  end
+
   def get_available_disk_images(bourreau)
     images = Array.new
     ec2 = AWS::EC2.new(:access_key_id => bourreau.amazon_ec2_access_key_id, :secret_access_key => bourreau.amazon_ec2_secret_access_key)

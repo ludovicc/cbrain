@@ -30,50 +30,65 @@
   <% if @disk_image_config.disk_image_bourreau_id && @disk_image_config.bourreau_id %>
 
   <span title="Image id to use on cloud bourreau #{@disk_image_config.bourreau.name}">
-    <p><label>Image to use on cloud bourreau <%= @disk_image_config.bourreau.name  %>:</label><br/>
-      <%=    
-	 bourreau = Bourreau.find(@disk_image_config.bourreau.id)
-	 images = Array.new
-	 if bourreau.cms_class == "ScirOpenStack"
-	   username = bourreau.open_stack_user_name
-	   password = bourreau.open_stack_password
-	   auth_url = bourreau.open_stack_auth_url
-	   tenant_name = bourreau.open_stack_tenant
-	   os = OpenStack::Connection.create({:username => username, :api_key=> password, :auth_method=>"password", :auth_url => auth_url, :authtenant_name =>tenant_name, :service_type=>"compute"})
-           os.list_images.each do |image|
-              images << [image[:name].to_s, image[:id]]
-
-           end
-          else
-	     if bourreau.cms_class == "ScirAmazon"
-	       ec2 = AWS::EC2.new(:access_key_id => bourreau.amazon_ec2_access_key_id, :secret_access_key => bourreau.amazon_ec2_secret_access_key)
-	       region = ec2.regions[bourreau.amazon_ec2_region]
-               return "Invalid region: #{bourreau.amazon_ec2_region}" unless !region.blank?	
-	       ec2 = region
-	       region.images.with_owner(:self).each { |image| images << [image.name,image.id] }
-             else
-               return "Bourreau #{bourreau.name} is not a cloud Bourreau!"
-             end
-          end
+    <span title="Disk image.">
+      <p><%= f.label :disk_image_id, "Disk image" %><br/>	
+      <%=
+         bourreau = Bourreau.find(@disk_image_config.bourreau.id)
+         images = Kernel.const_get(bourreau.cms_class).new.get_available_disk_images(bourreau)
          f.select :disk_image_id, images %>
-
-
+    <div class="field_explanation">Disk image used to create VMs in
+    the cloud provider.</div>
     </p>
-    <p><label>Image type used by VM factory on cloud bourreau <%= @disk_image_config.bourreau.name  %>:</label><br/>
+    </span>
+    <span title="User name.">
+    <p><%= f.label :user_name, "User name" %><br/>
+    <%= f.text_field :user_name %>
+    <div class="field_explanation">User name used to login to the VMs.</div>
+    </p>
+    </span>
+    <span title="SSH key pair.">
+    <p><%= f.label :ssh_key_pair, "SSH key pair" %><br/>
+      <%=
+         bourreau = Bourreau.find(@disk_image_config.bourreau.id)
+         keys = Kernel.const_get(bourreau.cms_class).new.get_available_key_pairs(bourreau)
+         f.select :ssh_key_pair, keys %>
+    <div class="field_explanation">Key pair used to login to the
+    VMs. The list of key pairs is configured in the cloud
+    provider.</div>
+    </p>
+    </span>
+    <span title="SSH tunnel port.">
+    <p><%= f.label :ssh_tunnel_port, "SSH tunnel port" %><br/>
+    <%= f.text_field :ssh_tunnel_port %>
+    <div class="field_explanation">Port used to establish a reverse
+    ssh tunnel from the VMs to the Bourreau host. Used to mount task
+    and data directories in the VMs using sshfs.</div>
+    </p>
+    </span>
+    <hr/>
+    <span title="Instance type.">
+      <p><%= f.label :instance_type, "Instance type" %><br/>
       <%=    
-	 bourreau = Bourreau.find(@disk_image_config.bourreau.id)
-	 instance_types = Array.new
-	 if bourreau.cms_class == "ScirOpenStack"
-             instance_types << ScirOpenStack.new.get_available_instance_types
-          else
-	  if bourreau.cms_class == "ScirAmazon"
-	     instance_types << ScirAmazon.new.get_available_instance_types
-	  else
-             return "Bourreau #{bourreau.name} is not an cloud Bourreau!"
-          end
-       end
-       f.select :default_image_type, instance_types.flatten %>
+         bourreau = Bourreau.find(@disk_image_config.bourreau.id)
+         instance_types = Kernel.const_get(bourreau.cms_class).new.get_available_instance_types
+         f.select :instance_type, instance_types.flatten %>
+      <div class="field_explanation">Instance type to use for the
+      VMs. Specific to the type of cloud provider.</div>
     </p>
+    </span>
+    <span title="Number of task slots.">
+    <p><%= f.label :task_slots, "Task slots" %><br/>
+    <%= f.text_field :task_slots %>
+    <div class="field_explanation">Number of tasks that can run concurrently in a VM.</div>
+    </p>
+    </span>
+    <span title="VM boot timeout.">
+    <p><%= f.label :boot_timeout, "VM boot timeout" %><br/>
+    <%= f.text_field :boot_timeout %>
+    <div class="field_explanation">Timeout in seconds after which a
+    booting VM will be terminated.</div>
+    </p>
+    </span>
   </span>
   <% end %>
 

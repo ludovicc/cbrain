@@ -52,8 +52,8 @@ class DiskImageConfigsController < ApplicationController
     id                = params[:id] || "NEW" # can be 'new' if we create()
     id                = nil if id == "NEW"
     form_disk_image_config  = DiskImageConfig.new(params[:disk_image_config]) # just to store the new attributes
-    form_disk_image_id      = form_disk_image_config.disk_image_bourreau_id.presence
-    form_bourreau_id  = form_disk_image_config.bourreau_id.presence
+    form_disk_image_id = form_disk_image_config.disk_image_bourreau_id.presence
+    form_bourreau_id   = form_disk_image_config.bourreau_id.presence
 
     @disk_image_config   = nil
     @disk_image_config   = DiskImageConfig.find(id) unless id.blank?
@@ -67,7 +67,12 @@ class DiskImageConfigsController < ApplicationController
 
     # Update everything else
     @disk_image_config[:disk_image_id] = form_disk_image_config[:disk_image_id]
-    @disk_image_config[:default_image_type] = form_disk_image_config[:default_image_type]
+    @disk_image_config[:user_name] = form_disk_image_config[:user_name]
+    @disk_image_config[:ssh_key_pair] = form_disk_image_config[:ssh_key_pair]
+    @disk_image_config[:ssh_tunnel_port] = form_disk_image_config[:ssh_tunnel_port]
+    @disk_image_config[:instance_type] = form_disk_image_config[:instance_type]
+    @disk_image_config[:task_slots] = form_disk_image_config[:task_slots]
+    @disk_image_config[:boot_timeout] = form_disk_image_config[:boot_timeout]
     
     respond_to do |format|
       if @disk_image_config.save_with_logging(current_user, %w( disk_image_id default_image_type ))
