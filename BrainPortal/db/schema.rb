@@ -11,7 +11,7 @@
 #
 # It's strongly recommended to check this file into your version control system.
 
-ActiveRecord::Schema.define(:version => 20160218173528) do
+ActiveRecord::Schema.define(:version => 20160510175248) do
 
   create_table "active_record_logs", :force => true do |t|
     t.integer  "ar_id"
@@ -113,7 +113,12 @@ ActiveRecord::Schema.define(:version => 20160218173528) do
     t.datetime "updated_at"
     t.integer  "bourreau_id"
     t.string   "disk_image_id"
-    t.string   "default_image_type"
+    t.string   "user_name"
+    t.string   "task_slots"
+    t.string   "boot_timeout"
+    t.string   "ssh_tunnel_port"
+    t.string   "ssh_key_pair"
+    t.string   "instance_type"
   end
 
   create_table "exception_logs", :force => true do |t|
@@ -257,12 +262,10 @@ ActiveRecord::Schema.define(:version => 20160218173528) do
     t.string   "open_stack_auth_url"
     t.string   "open_stack_tenant"
     t.string   "open_stack_password"
-    t.float    "cost_factor"
     t.integer  "ssh_tunnel_port"
     t.string   "amazon_ec2_region"
     t.string   "amazon_ec2_access_key_id"
     t.string   "amazon_ec2_secret_access_key"
-    t.string   "amazon_ec2_key_pair"
     t.string   "amazon_ec2_instance_type"
     t.string   "docker_executable_name"
   end

@@ -47,6 +47,7 @@ class CbrainTask::StartVM < PortalTask
     params = self.params
     params[:available_disk_images] = bourreau.scir_class.new.get_available_disk_images(bourreau)
     params[:available_instance_types] = bourreau.scir_class.new.get_available_instance_types
+    params[:available_ssh_key_pairs] = bourreau.scir_class.new.get_available_key_pairs(bourreau)
     ""
   end
   

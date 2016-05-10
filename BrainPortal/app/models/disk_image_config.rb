@@ -30,6 +30,6 @@ class DiskImageConfig < ActiveRecord::Base
   belongs_to     :bourreau   
   belongs_to     :disk_image_bourreau 
 
-  attr_accessible :bourreau_id, :disk_image_bourreau_id, :disk_image_id, :default_image_type
+  attr_accessible :bourreau_id, :disk_image_bourreau_id, :disk_image_id, :instance_type, :user_name, :task_slots, :boot_timeout, :ssh_tunnel_port, :ssh_key_pair
 
 end
