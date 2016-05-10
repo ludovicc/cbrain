@@ -81,8 +81,6 @@ class Scir
       :amazon_ec2_region => rr.amazon_ec2_region || "",
       :amazon_ec2_access_key_id => rr.amazon_ec2_access_key_id || "",
       :amazon_ec2_secret_access_key => rr.amazon_ec2_secret_access_key || "",
-      :amazon_ec2_key_pair => rr.amazon_ec2_key_pair || "",
-      :amazon_ec2_instance_type => rr.amazon_ec2_instance_type || "",
     }
   end
 

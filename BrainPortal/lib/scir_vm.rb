@@ -10,10 +10,10 @@ class ScirVM < Scir
   Revision_info=CbrainFileRevision[__FILE__] #:nodoc:
 
   def run(job) #:nodoc:
-    task,vm_task = get_task_and_vm_task job
-
-    check_mounts vm_task
-
+    task    = get_task(job.task_id)
+    vm_task = get_task(task.vm_id)
+    check_mounts(vm_task)
+    
     command = qsub_command(job)
     command.sub!(task.full_cluster_workdir,File.join(File.basename(RemoteResource.current_resource.cms_shared_dir),task.cluster_workdir)) #TODO (VM tristan) fix these awful substitutions #4769
     command.gsub!(task.full_cluster_workdir,"./")  
@@ -24,11 +24,9 @@ class ScirVM < Scir
   end
 
   def job_ps(jid,caller_updated_at = nil) #:nodoc:
-    vm_id,pid = get_vm_id_and_pid jid
-    vm_task = get_task vm_id
-
-    check_mounts vm_task
-
+    vm_task = get_task(get_vm_id(jid))
+    pid = get_pid(jid)
+    check_mounts(vm_task)
     command = "ps -p #{pid} -o pid,state | awk '$1 == \"#{pid}\" {print $2}'"
     status_letter = run_command(command,vm_task).gsub("\n","")
     return Scir::STATE_DONE if status_letter == "" #TODO (VM tristan) find a way to return STATE_FAILED when exit code was not 0
@@ -46,22 +44,22 @@ class ScirVM < Scir
   end
   
   def suspend(jid) #:nodoc:
-    vm_id,pid = get_vm_id_and_pid jid
-    vm_task = get_task vm_id
+    vm_task = get_task(get_vm_id(jid))
+    pid = get_pid(jid)
     command = "kill -STOP #{pid}"
     run_command(command,vm_task)
   end
 
   def resume(jid) #:nodoc:
-    vm_id,pid = get_vm_id_and_pid jid
-    vm_task = get_task vm_id
+    vm_task = get_task(get_vm_id(jid))
+    pid = get_pid(jid)
     command = "kill -CONT #{pid}"
-    run_command(command,vm_task)
+    run_commanxsd(command,vm_task)
   end
 
   def terminate(jid) #:nodoc:
-    vm_id,pid = get_vm_id_and_pid jid
-    vm_task = get_task vm_id
+    vm_task = get_task(get_vm_id(jid))
+    pid = get_pid(jid)
     command = "kill -TERM #{pid}"
     run_command(command,vm_task)
   rescue => ex
@@ -73,17 +71,26 @@ class ScirVM < Scir
   end
 
   def is_valid_jobid?(job_id) #:nodoc:
-    return job_id.start_with?("VM:")
+    s=job_id.split(":")
+    return false if s.size != 3
+    return false if s[0] != "VM"
+    return true
   end
 
-  def get_vm_id_and_pid(jid) #:nodoc:
+  def get_vm_id(jid) #:nodoc:
+    raise "Invalid job id" unless is_valid_jobid?(jid)
     s = jid.split(":")
-    raise "#{jid} doesn't look like a VM job id" unless ( s[0] == "VM" && s.size == 3 )
-    return [s[1],s[2]]
+    return s[1]
+  end
+
+  def get_pid(jid) #:nodoc:
+    raise "Invalid job id" unless is_valid_jobid?(jid)
+    s = jid.split(":")
+    return s[2]
   end
 
   def run_command(command,vm_task) #:nodoc:
-    master = get_ssh_master vm_task
+    master = get_ssh_master(vm_task)
     result = master.remote_shell_command_reader(command) {|io| io.read}
     return result 
   end
@@ -102,14 +109,7 @@ class ScirVM < Scir
   end
   
   def get_task(vm_id) #:nodoc:
-    CbrainTask.where(:id => vm_id).first
-  end
-
-  def get_task_and_vm_task(job) #:nodoc:
-    task = get_task job.task_id
-    vm_id = task.vm_id
-    vm_task = get_task vm_id
-    return [task,vm_task]
+    CbrainTask.find(vm_id)
   end
 
   def shell_escape(s) #:nodoc:

@@ -24,7 +24,6 @@ class CbrainTask::StartVM #:nodoc:
   
   def validate_params #:nodoc:
     message = ""
-    message += "Missing disk image! "  if params[:disk_image].blank?
 
     message += "Missing VM boot timeout! "  if params[:vm_boot_timeout].blank?
     message += "Boot timeout has to be an integer! " if !is_integer? params[:vm_boot_timeout]

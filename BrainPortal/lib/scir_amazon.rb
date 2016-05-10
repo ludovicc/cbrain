@@ -41,11 +41,8 @@ class ScirAmazon < ScirCloud
 
   def get_available_disk_images(bourreau)
     images = Array.new
-    ec2 = AWS::EC2.new(:access_key_id => bourreau.amazon_ec2_access_key_id, :secret_access_key => bourreau.amazon_ec2_secret_access_key)
-    region = ec2.regions[bourreau.amazon_ec2_region]
-    return "Invalid region: #{bourreau.amazon_ec2_region}" unless !region.blank?	
-    ec2 = region
-    region.images.with_owner(:self).each { |image| images << [image.name,image.id] }
+    ec2 = get_amazon_ec2_connection()
+    ec2.images.with_owner(:self).each { |image| images << [image.name,image.id] }
     return images
   end
 
@@ -89,7 +86,7 @@ class ScirAmazon < ScirCloud
     end
 
     def terminate(jid)
-      get_instance(jid).terminate
+      get_vm_instance(jid).terminate
     end
     
     def get_local_ip(jid)
@@ -127,8 +124,7 @@ class ScirAmazon < ScirCloud
       ec2 = AWS::EC2.new(:access_key_id => access_key_id, :secret_access_key => secret_access_key)
       region = ec2.regions[amazon_ec2_region]
       raise "Region #{region} does not exist" unless region.exists?
-      ec2 = region
-      return ec2
+      return region
     end
 
     def get_security_group(security_groups,security_group_name)
@@ -138,8 +134,7 @@ class ScirAmazon < ScirCloud
       return false
     end
 
-    def submit_VM(vm_name,image_id,instance_type,tag_value)
-      key_pair = Scir.cbrain_config[:amazon_ec2_key_pair]
+    def submit_VM(vm_name,image_id,key_pair,instance_type,tag_value)
       ec2 = get_amazon_ec2_connection()
       security_groups=ec2.security_groups
       security_group_name="cbrain worker"
@@ -169,7 +164,7 @@ class ScirAmazon < ScirCloud
     
     def run(job)
       task = CbrainTask.find(job.task_id)
-      vm = submit_VM("CBRAIN Worker", task.params[:disk_image], task.params[:instance_type], "CBRAIN worker") 
+      vm = submit_VM("CBRAIN Worker", task.params[:disk_image], task.params[:ssh_key_pair],task.params[:instance_type], "CBRAIN worker") 
       return vm.id.to_s
     end
 
@@ -177,10 +172,10 @@ class ScirAmazon < ScirCloud
     
     def get_instance_from_cbrain_job_id(jid)
       cluster_jobid = CbrainTask.where(:id => jid).first.cluster_jobid
-      return get_instance(cluster_jobid)
+      return get_vm_instance(cluster_jobid)
     end
 
-    def get_instance(id)
+    def get_vm_instance(id)
       ec2 = get_amazon_ec2_connection()
       instance = ec2.instances.detect { |x| x.id == id }
       return instance
@@ -196,7 +191,7 @@ class ScirAmazon < ScirCloud
   class JobTemplate < Scir::JobTemplate #:nodoc
     # NOTE: We use a custom 'run' method in the Session, instead of Scir's version.
     def qsub_command
-      return "blah"
+      return "echo This is never executed"
     end
     
   end

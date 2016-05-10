@@ -272,15 +272,15 @@ class BourreauWorker < Worker
   def get_vm_tasks_to_handle #:nodoc:
 
     #gets VMs available to me
-    vms = CbrainTask.not_archived.where(:type => "CbrainTask::StartVM", :bourreau_id => @rr_id, :status => "On CPU")  
-    return nil unless vms.blank? || ( vms.size != 0 )
+    vm_tasks = CbrainTask.not_archived.where(:type => "CbrainTask::StartVM", :bourreau_id => @rr_id, :status => "On CPU")  
+    return nil unless vm_tasks.blank? || ( vm_tasks.size != 0 )
 
-    #gets all tasks going to DiskImage bourreaux
+    #gets all tasks going to DiskImage bourreaux that are configured on this physical bourreau (A)
     tasks_for_vms = Array.new
-    disk_images = DiskImageBourreau.all
-    disk_images.each { |bourreau|
+    configured_disk_image_ids = DiskImageConfig.where(:bourreau_id => @rr_id).all.map{ |x| x.disk_image_bourreau_id }
+    configured_disk_image_ids.each { |id|
       #list tasks going to these bourreaux
-      tasks_for_vms.concat CbrainTask.not_archived.where(:bourreau_id => bourreau.id, :status => ReadyTasks) 
+      tasks_for_vms.concat CbrainTask.not_archived.where(:bourreau_id => id, :status => ReadyTasks) 
     }
 
     #now joins
@@ -295,44 +295,44 @@ class BourreauWorker < Worker
     }
 
     # now determines which pending tasks could be taken by my VMs
-    vms.each { |x| 
-      if x.params[:vm_status] == "booted"
-        worker_log.info "=== Found a booted VM: task id = #{x.id}, vm file id = #{x.params[:disk_image]}" 
-        job_slots = x.params[:job_slots].to_i 
-        worker_log.info "VM #{x.id} has #{job_slots} job slots"
+    vm_tasks.each { |vm_task| 
+      if vm_task.params[:vm_status] == "booted"
+        worker_log.info "=== Found a booted VM: task id = #{vm_task.id}, vm file id = #{vm_task.params[:disk_image]}" 
+        job_slots = vm_task.params[:job_slots].to_i 
+        worker_log.info "VM #{vm_task.id} has #{job_slots} job slots"
         allTasks = ActiveTasks.dup
         allTasks.concat(ReadyTasks)
         CbrainTask.transaction do
-          x.lock! # to prevent different workers to concurrently send tasks to the same VM, potentially more jobs than job slots on the VM. Only the workers of this bourreau will attempt to take this lock
-          active_jobs = CbrainTask.where(:vm_id => x.id,:status => allTasks).count
-          worker_log.info "VM #{x.id} has #{active_jobs} active jobs"
+          vm_task.lock! # to prevent different workers to concurrently send tasks to the same VM, potentially more jobs than job slots on the VM. Only the workers of this bourreau will attempt to take this lock
+          active_jobs = CbrainTask.where(:vm_id => vm_task.id,:status => allTasks).count
+          worker_log.info "VM #{vm_task.id} has #{active_jobs} active jobs"
           free_slots = job_slots - active_jobs
-          worker_log.info "VM #{x.id} has #{free_slots} free job slots"
+          worker_log.info "VM #{vm_task.id} has #{free_slots} free job slots"
           #add new tasks if free job slots available
           if free_slots > 0 
             #check if a task could go to this booted VM
             tasks_for_vms.each { |y| 
               if y.status == 'New'
-                task_image_file_id = DiskImageBourreau.where(:id => y.bourreau_id).first #this should be a find
-                worker_log.info "Task #{y.id} needs image file id #{task_image_file_id.disk_image_file_id}"
-                if task_image_file_id.disk_image_file_id.to_i == x.params[:disk_image].to_i 
+                task_disk_image_config = DiskImageConfig.where(:disk_image_bourreau_id => y.bourreau_id, :bourreau_id => @rr_id).first # there is one because of (A)
+                worker_log.info "Task #{y.id} needs image id #{task_disk_image_config.disk_image_id}"
+                if task_disk_image_config.disk_image_id == vm_task.params[:disk_image]
                   if y.vm_id.blank? #don't take a task that someone else took
 		    begin
-		      cpu_vm = x.get_time_on_cpu
-                      if y.job_walltime_estimate < ( x.job_walltime_estimate - cpu_vm ) # don't take tasks that will not fit in the remaining walltime
-                        worker_log.info "Task #{y.id} is estimated to last #{y.job_walltime_estimate}. It can fit in the remaining #{x.job_walltime_estimate - x.get_time_on_cpu}s on VM #{x.id}."
+		      cpu_vm = vm_task.get_time_on_cpu
+                      if y.job_walltime_estimate < ( vm_task.job_walltime_estimate - cpu_vm ) # don't take tasks that will not fit in the remaining walltime
+                        worker_log.info "Task #{y.id} is estimated to last #{y.job_walltime_estimate}. It can fit in the remaining #{vm_task.job_walltime_estimate - vm_task.get_time_on_cpu}s on VM #{vm_task.id}."
                         CbrainTask.transaction do
                           # It's probably nicer to put this update after status transition to "Setting Up" in process_task. But then we'd need to redo VM selection there.
                           y.lock! # to prevent different workers to send this task concurrently to (different) VMs. All workers of all bourreau may try to get this lock.
-                          worker_log.info "====> VM task #{y.id} may go to VM #{x.id}"
+                          worker_log.info "====> VM task #{y.id} may go to VM #{vm_task.id}"
                           free_slots = free_slots - 1
                           y.params[:physical_bourreau] = @rr_id 
-                          y.vm_id = x.id #TODO (VM tristan) check if we really want to fix *now* the VM id where this task will be executed. 
+                          y.vm_id = vm_task.id #TODO (VM tristan) check if we really want to fix *now* the VM id where this task will be executed. 
                           tasks << y
                           y.save!
                         end
                       else
-                        worker_log.info "Task #{y.id} is estimated to last #{y.job_walltime_estimate}. It cannot fit in the remaining #{x.job_walltime_estimate - x.get_time_on_cpu}s on VM #{x.id}."
+                        worker_log.info "Task #{y.id} is estimated to last #{y.job_walltime_estimate}. It cannot fit in the remaining #{vm_task.job_walltime_estimate - vm_task.get_time_on_cpu}s on VM #{vm_task.id}."
                       end
                     rescue => ex
 	                worker_log.info "#{ex.message}"
@@ -340,12 +340,12 @@ class BourreauWorker < Worker
                   end
                   break unless free_slots > 0
                 else
-                  worker_log.info "====> VM task #{y.id} may not go to VM #{x.id} (VM disk file id is #{x.params[:disk_image]})"
+                  worker_log.info "====> VM task #{y.id} may not go to VM #{vm_task.id} (VM disk image id is #{vm_task.params[:disk_image]})"
                 end
               end
             }
           end
-          x.save
+          vm_task.save
         end
       end          
     }
