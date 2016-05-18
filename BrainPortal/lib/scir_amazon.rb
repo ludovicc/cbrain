@@ -25,7 +25,7 @@
 # jobs locally as standard unix subprocesses.
 
 
-require 'aws-sdk-v1'
+require 'aws-sdk'
 
 # A Scir class to handle VMs on Amazon EC2
 # This class can only handle tasks of type CBRAIN::StartVM.
@@ -34,35 +34,52 @@ class ScirAmazon < ScirCloud
  
   Revision_info=CbrainFileRevision[__FILE__] #:nodoc:
  
-  def get_available_instance_types 
+  def self.get_available_instance_types 
     # no, there's no method in the API to return such an array!
-    return [ "t2.micro", "t2.small", "t2.medium", "m3.medium", "m3.large", "m3.xlarge", "m3.2xlarge", "c3.large", "c3.xlarge", "c3.2xlarge", "c3.4xlarge", "c3.8xlarge", "r3.large", "r3.xlarge", "r3.2xlarge", "r3.4xlarge", "r3.8xlarge", "g2.2xlarge", "i2.xlarge", "i2.2xlarge", "i2.4xlarge", "i2.8xlarge", "hs1.8xlarge" ]
+    # yes, the available instance types change over time!
+    return [ "t1.micro","m1.small","m1.medium","m1.large","m1.xlarge","m3.medium","m3.large","m3.xlarge","m3.2xlarge","m4.large","m4.xlarge","m4.2xlarge","m4.4xlarge","m4.10xlarge","t2.nano","t2.micro","t2.small","t2.medium","t2.large","m2.xlarge","m2.2xlarge","m2.4xlarge","cr1.8xlarge","i2.xlarge","i2.2xlarge","i2.4xlarge","i2.8xlarge","hi1.4xlarge","hs1.8xlarge","c1.medium","c1.xlarge","c3.large","c3.xlarge","c3.2xlarge","c3.4xlarge","c3.8xlarge","c4.large","c4.xlarge","c4.2xlarge","c4.4xlarge","c4.8xlarge","cc1.4xlarge","cc2.8xlarge","g2.2xlarge","g2.8xlarge","cg1.4xlarge","r3.large","r3.xlarge","r3.2xlarge","r3.4xlarge","r3.8xlarge","d2.xlarge","d2.2xlarge","d2.4xlarge","d2.8xlarge" ]
   end
 
-  def get_available_key_pairs(bourreau)
-    keys = Array.new
-    ec2 = AWS::EC2.new(:access_key_id => bourreau.amazon_ec2_access_key_id, :secret_access_key => bourreau.amazon_ec2_secret_access_key)
-    region = ec2.regions[bourreau.amazon_ec2_region]
-    return "Invalid region: #{bourreau.amazon_ec2_region}" unless !region.blank?	
-    ec2 = region
-    region.key_pairs.each { |key| keys << [key.name] }
+  def self.get_available_key_pairs(bourreau)
+    ec2 = get_amazon_ec2_connection_bourreau(bourreau)
+    keys = []
+    ec2.describe_key_pairs.key_pairs.each { |key| keys << [key.key_name] }
     return keys
   end
 
-  def get_available_disk_images(bourreau)
+  def self.get_available_disk_images(bourreau)
     images = Array.new
-    ec2 = get_amazon_ec2_connection()
-    ec2.images.with_owner(:self).each { |image| images << [image.name,image.id] }
+    ec2 = get_amazon_ec2_connection_bourreau(bourreau)
+    ec2.describe_images(owners: [ "self" ]).images.each { |image| images << [image.name,image.image_id] }
     return images
   end
 
+  private
+
+  def self.get_amazon_ec2_connection(access_key_id, secret_access_key, amazon_ec2_region)
+     # get connection
+     ec2 = Aws::EC2::Client.new(access_key_id: access_key_id,
+                                secret_access_key: secret_access_key,
+                                region: amazon_ec2_region)
+     return ec2
+  end
+
+  def self.get_amazon_ec2_connection_bourreau(bourreau)
+    # connection parameters, defined in the portal
+    access_key_id = bourreau[:amazon_ec2_access_key_id]
+    secret_access_key = bourreau[:amazon_ec2_secret_access_key]
+    amazon_ec2_region = bourreau[:amazon_ec2_region]
+    
+    return get_amazon_ec2_connection(access_key_id, secret_access_key, amazon_ec2_region)
+  end
+  
   class Session < Scir::Session #:nodoc:
 
     @state_if_missing = Scir::STATE_RUNNING
 
     def update_job_info_cache #:nodoc:
       @job_info_cache = {}
-      ec2 = get_amazon_ec2_connection()
+      ec2 = ScirAmazon.get_amazon_ec2_connection(Scir)
       ec2.instances.each do |s|
         # get status
         state = statestring_to_stateconst(s.status)
@@ -124,28 +141,8 @@ class ScirAmazon < ScirCloud
       [ "exception", "exception" ]
     end
 
-    def get_amazon_ec2_connection()
-      # connection parameters, defined in the portal
-      access_key_id = Scir.cbrain_config[:amazon_ec2_access_key_id]
-      secret_access_key = Scir.cbrain_config[:amazon_ec2_secret_access_key]
-      amazon_ec2_region = Scir.cbrain_config[:amazon_ec2_region]
-     
-      # get connection
-      ec2 = AWS::EC2.new(:access_key_id => access_key_id, :secret_access_key => secret_access_key)
-      region = ec2.regions[amazon_ec2_region]
-      raise "Region #{region} does not exist" unless region.exists?
-      return region
-    end
-
-    def get_security_group(security_groups,security_group_name)
-      security_groups.each do |g|
-        return g if g.name == security_group_name
-      end
-      return false
-    end
-
     def submit_VM(vm_name,image_id,key_pair,instance_type,tag_value)
-      ec2 = get_amazon_ec2_connection()
+      ec2 = get_amazon_ec2_connection(Scir)
       security_groups=ec2.security_groups
       security_group_name="cbrain worker"
       if ec2.security_groups.map{ |c| c.name }.include? security_group_name
@@ -186,7 +183,7 @@ class ScirAmazon < ScirCloud
     end
 
     def get_vm_instance(id)
-      ec2 = get_amazon_ec2_connection()
+      ec2 = get_amazon_ec2_connection(bourreau)
       instance = ec2.instances.detect { |x| x.id == id }
       return instance
     end
@@ -195,6 +192,13 @@ class ScirAmazon < ScirCloud
       raise "Not used in this implementation."
     end
 
+    def get_security_group(security_groups,security_group_name)
+      security_groups.each do |g|
+        return g if g.name == security_group_name
+      end
+      return false
+    end
+    
   end
   
   # This method seems required

@@ -34,7 +34,7 @@
       <p><%= f.label :disk_image_id, "Disk image" %><br/>	
       <%=
          bourreau = Bourreau.find(@disk_image_config.bourreau.id)
-         images = Kernel.const_get(bourreau.cms_class).new.get_available_disk_images(bourreau)
+         images = Kernel.const_get(bourreau.cms_class).get_available_disk_images(bourreau)
          f.select :disk_image_id, images %>
     <div class="field_explanation">Disk image used to create VMs in
     the cloud provider.</div>
@@ -50,7 +50,7 @@
     <p><%= f.label :ssh_key_pair, "SSH key pair" %><br/>
       <%=
          bourreau = Bourreau.find(@disk_image_config.bourreau.id)
-         keys = Kernel.const_get(bourreau.cms_class).new.get_available_key_pairs(bourreau)
+         keys = Kernel.const_get(bourreau.cms_class).get_available_key_pairs(bourreau)
          f.select :ssh_key_pair, keys %>
     <div class="field_explanation">Key pair used to login to the
     VMs. The list of key pairs is configured in the cloud
@@ -70,7 +70,7 @@
       <p><%= f.label :instance_type, "Instance type" %><br/>
       <%=    
          bourreau = Bourreau.find(@disk_image_config.bourreau.id)
-         instance_types = Kernel.const_get(bourreau.cms_class).new.get_available_instance_types
+         instance_types = Kernel.const_get(bourreau.cms_class).get_available_instance_types
          f.select :instance_type, instance_types.flatten %>
       <div class="field_explanation">Instance type to use for the
       VMs. Specific to the type of cloud provider.</div>

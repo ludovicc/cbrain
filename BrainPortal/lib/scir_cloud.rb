@@ -30,15 +30,15 @@
 class ScirCloud < Scir
   Revision_info=CbrainFileRevision[__FILE__] #:nodoc:
 
-  def get_available_instance_types
+  def self.get_available_instance_types
     raise "Not implemented"
   end
 
-  def get_available_disk_images(bourreau)
+  def self.get_available_disk_images(bourreau)
     raise "Not implemented"
   end
 
-  def get_available_key_pairs(bourreau)
+  def self.get_available_key_pairs(bourreau)
     raise "Not implemented"
   end
 

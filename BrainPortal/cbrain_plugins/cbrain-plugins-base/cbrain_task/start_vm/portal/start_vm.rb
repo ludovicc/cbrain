@@ -20,6 +20,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.  
 #
 
+require "resolv-replace.rb" 
+
 # A task starting a VM from a disk image.
 class CbrainTask::StartVM < PortalTask
 
@@ -45,9 +47,9 @@ class CbrainTask::StartVM < PortalTask
 
   def before_form #:nodoc:
     params = self.params
-    params[:available_disk_images] = bourreau.scir_class.new.get_available_disk_images(bourreau)
-    params[:available_instance_types] = bourreau.scir_class.new.get_available_instance_types
-    params[:available_ssh_key_pairs] = bourreau.scir_class.new.get_available_key_pairs(bourreau)
+    params[:available_disk_images] = bourreau.scir_class.get_available_disk_images(bourreau)
+    params[:available_instance_types] = bourreau.scir_class.get_available_instance_types
+    params[:available_ssh_key_pairs] = bourreau.scir_class.get_available_key_pairs(bourreau)
     ""
   end
   
