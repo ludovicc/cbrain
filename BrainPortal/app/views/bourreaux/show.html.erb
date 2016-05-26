@@ -242,7 +242,6 @@
                   [ "MOAB",            "ScirMoab" ],
                   [ "Sharcnet custom", "ScirSharcnet" ],
                   [ "UNIX processes",  "ScirUnix" ],
-	          [ "OpenStack (StartVM tasks only)",  "ScirOpenStack" ],
 	          [ "Amazon EC2 (StartVM tasks only)",  "ScirAmazon" ]
               ], :selected => @bourreau.cms_class)
           %>
@@ -265,28 +264,6 @@
             <div class="field_explanation">Optional. Careful, this is inserted as-is in the command-line for submitting jobs.</div>
        <% end %>
 
-	<% if @bourreau.cms_class == "ScirOpenStack" %>
-	  <% t.edit_cell(:open_stack_auth_url, :header => "OpenStack Authentication URL") do %>
-            <%= text_field_tag "bourreau[open_stack_auth_url]", @bourreau.open_stack_auth_url, :size => 60 %><br/>
-            <div class="field_explanation">Optional. Only for OpenStack Bourreaux.</div>
-          <% end %>
-
-	  <% t.edit_cell(:open_stack_tenant, :header => "OpenStack Tenant") do %>
-            <%= text_field_tag "bourreau[open_stack_tenant]", @bourreau.open_stack_tenant, :size => 60 %><br/>
-            <div class="field_explanation">Optional. Only for OpenStack Bourreaux.</div>
-          <% end %>
-
-	  <% t.edit_cell(:open_stack_user_name, :header => "OpenStack User Name") do %>
-            <%= text_field_tag "bourreau[open_stack_user_name]", @bourreau.open_stack_user_name, :size => 60 %><br/>
-            <div class="field_explanation">Optional. Only for OpenStack Bourreaux.</div>
-          <% end %>
-
-	  <% t.edit_cell(:open_stack_password, :header => "OpenStack Password") do %>
-            <%= text_field_tag "bourreau[open_stack_password]", @bourreau.open_stack_password, :size => 60 %><br/>
-            <div class="field_explanation">Optional. Only for OpenStack Bourreaux.</div>
-          <% end %>  
-
-	<% end %>
 	<% if @bourreau.cms_class == "ScirAmazon" %>
 	  <% t.edit_cell(:amazon_ec2_access_key_id, :header => "Amazon EC2 Access Key Id") do %>
             <%= text_field_tag "bourreau[amazon_ec2_access_key_id]", @bourreau.amazon_ec2_access_key_id, :size => 60 %><br/>
@@ -416,7 +393,7 @@
   Disk image configuration on cloud execution servers:<br/> 
   <table>
     <% for bourreau in Bourreau.find_all_accessible_by_user(current_user).all %>
-    <% if bourreau.cms_class == "ScirOpenStack" || bourreau.cms_class == "ScirAmazon" %>
+    <% if bourreau.cms_class == "ScirAmazon" %>
     <tr>
       <th colspan="9" class="centered">
         <%= link_to_bourreau_if_accessible(bourreau) %>

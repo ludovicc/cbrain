@@ -46,8 +46,7 @@ group :development do
   gem "pry-doc"
 end
 
-gem 'openstack'
-gem 'aws-sdk-v1'
+gem 'aws-sdk'
 
 group :test do
   gem "rspec",                    "~> 3.4"

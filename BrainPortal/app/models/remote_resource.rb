@@ -122,7 +122,7 @@ class RemoteResource < ActiveRecord::Base
                         :cms_default_queue, :cms_extra_qsub_args, :cms_shared_dir, :workers_instances,
                         :workers_chk_time, :workers_log_to, :workers_verbose, :help_url, :rr_timeout, :proxied_host,
                         :spaced_dp_ignore_patterns, :license_agreements, :support_email, :system_from_email, :external_status_page_url, :docker_executable_name,
-                        :disk_image_file_id, :disk_image_user, :ssh_tunnel_port, :open_stack_user_name, :open_stack_auth_url, :open_stack_tenant, :open_stack_password,
+                        :disk_image_file_id, :disk_image_user, :ssh_tunnel_port,
                         :amazon_ec2_region, :amazon_ec2_access_key_id, :amazon_ec2_secret_access_key, :amazon_ec2_key_pair, :amazon_ec2_instance_type, :cost_factor
 
   ############################################################################

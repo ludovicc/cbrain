@@ -200,7 +200,6 @@
             [ "MOAB",            "ScirMoab" ],
             [ "Sharcnet custom", "ScirSharcnet" ],
             [ "UNIX processes",  "ScirUnix" ],
-	    [ "OpenStack (StartVM tasks only)",  "ScirOpenStack" ],
 	    [ "Amazon EC2 (StartVM tasks only)",  "ScirAmazon" ]
         ]
     %>
@@ -217,22 +216,6 @@
     <p><%= f.label :cms_extra_qsub_args, "Extra 'qsub' options" %><br/>
     <%= f.text_field :cms_extra_qsub_args, :size => 60 %><br/>
     <div class="field_explanation">Optional. Careful, this is inserted as-is in the command-line for submitting jobs.</div>
-
-     <p><%= f.label :open_stack_auth_url, "OpenStack Authentication URL" %><br/> 
-     <%= f.text_field :open_stack_auth_url, :size => 60 %><br/> 
-     <div class="field_explanation">Optional. Only for OpenStack Bourreaux.</div> 
-
-     <p><%= f.label :open_stack_tenant, "OpenStack tenant" %><br/> 
-     <%= f.text_field :open_stack_tenant, :size => 60 %><br/> 
-     <div class="field_explanation">Optional. Only for OpenStack Bourreaux.</div> 
-
-     <p><%= f.label :open_stack_user_name, "OpenStack user name" %><br/> 
-     <%= f.text_field :open_stack_user_name, :size => 60 %><br/> 
-     <div class="field_explanation">Optional. Only for OpenStack Bourreaux.</div> 
-
-     <p><%= f.label :open_stack_password, "OpenStack password" %><br/> 
-     <%= f.text_field :open_stack_password, :size => 60 %><br/> 
-     <div class="field_explanation">Optional. Only for OpenStack Bourreaux.</div> 
 
      <p><%= f.label :cost_factor, "Cost factor (for VM factory)" %><br/> 
      <%= f.text_field :cost_factor, :size => 60 %><br/> 

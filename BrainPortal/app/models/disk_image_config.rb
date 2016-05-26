@@ -20,7 +20,7 @@
 #
 
 
-# For Bourreaux with ScirOpenStack and ScirAmazon cluster types
+# For Bourreaux with ScirAmazon cluster types
 # This class associates a Disk Image Bourreau to an disk image id and image type. 
 
 class DiskImageConfig < ActiveRecord::Base
