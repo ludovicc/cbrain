@@ -53,8 +53,6 @@ class BourreauSystemChecks < CbrainChecker #:nodoc:
       cluster_class = "ScirMoab"
     when "SHARCNET"                # old keyword
       cluster_class = "ScirSharcnet"
-    when "Amazon"
-       cluster_class = "ScirAmazon"
     when /Scir(\w+)/
       cluster_class = cluster_type
     else
