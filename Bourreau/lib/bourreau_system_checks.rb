@@ -53,8 +53,11 @@ class BourreauSystemChecks < CbrainChecker #:nodoc:
       cluster_class = "ScirMoab"
     when "SHARCNET"                # old keyword
       cluster_class = "ScirSharcnet"
+    when "Amazon"
+       cluster_class = "ScirAmazon"
     when /Scir(\w+)/
       cluster_class = cluster_type
+    else
       raise "CBRAIN configuration error: cluster type is set to unknown value '#{cluster_type}' !"
     end
     if cluster_class != cluster_type  # adjust old keywords
