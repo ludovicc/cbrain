@@ -41,11 +41,5 @@ RUN cd $HOME/cbrain/BrainPortal    && \
     cd `bundle show sys-proctable` && \
     rake install
 
-RUN cd $HOME/cbrain/BrainPortal    && \
-    rake cbrain:plugins:install:all
-
 RUN cd $HOME/cbrain/Bourreau       && \
     bundle install
-
-RUN cd $HOME/cbrain/BrainPortal    && \
-    rake cbrain:plugins:install:plugins
