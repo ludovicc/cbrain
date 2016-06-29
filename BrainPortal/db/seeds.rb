@@ -78,10 +78,11 @@ end
 # Seeding steps starts here
 #------------------------------------------------
 
-raise "The seeding process must be run by a process connected to a terminal" unless
-  STDIN.tty? && STDOUT.tty? && STDERR.tty?
-stty_save = `stty -g`.chomp
-trap('INT') { system('stty', stty_save) ; puts "\n\nInterrupt. Exiting."; exit(0) }
+if STDIN.tty? && STDOUT.tty? && STDERR.tty?
+  interactive = true
+  stty_save = `stty -g`.chomp
+  trap('INT') { system('stty', stty_save) ; puts "\n\nInterrupt. Exiting."; exit(0) }
+end
 hostname = Socket.gethostname
 
 print <<INTRO
@@ -123,17 +124,17 @@ elsif File.exists?(portal_name_file)
 end
 
 if ! portal_name.blank?
-  raise "Invalid name for the portal." if portal_name !~ /^[a-z]\w+$/i
+  raise "Invalid name for the portal: #{portal_name}." if portal_name !~ /^[a-z]\w+$/i
   puts "Portal name: #{portal_name}"
 end
 
 # Interactive question
-if portal_name.blank?
+if portal_name.blank? && interactive
   puts "Enter a name (a simple identifier) for the Portal."
   puts ""
   print "Portal name: "
   portal_name = Readline.readline
-  raise "Invalid name for the portal." if portal_name.blank? || portal_name !~ /^[a-z]\w+$/i
+  raise "Invalid name for the portal: #{portal_name}." if portal_name.blank? || portal_name !~ /^[a-z]\w+$/i
 end
 
 
